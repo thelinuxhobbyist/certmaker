@@ -511,7 +511,7 @@ export function BuilderPage() {
       />
       <p className="muted preview-hint">
         Drag text and the logo on the preview to place them. Resize the logo with the
-        corner handles.
+        corner handles. Optional fields (like Certificate ID) only print if you fill them in.
       </p>
 
       <div className="designer-controls">
@@ -551,8 +551,25 @@ export function BuilderPage() {
         <div className="field-stack">
           {fields.filter(isTextField).map((f) => {
             const isStandard = STANDARD_FIELDS.some((s) => s.key === f.key);
-            const optional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
+            const markedOptional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
+            const optional =
+              Boolean(markedOptional) ||
+              (!f.static && f.key !== "student_name");
+            const required = f.key === "student_name";
             const active = selectedKey === f.key;
+            const placeholder = (() => {
+              if (f.key === "cert_title") return "e.g. Certificate of Achievement";
+              if (f.key === "cert_id") {
+                return "Leave blank to skip — not printed if empty";
+              }
+              if (f.key === "issue_date") {
+                return "e.g. 11 Aug 2026 — leave blank to skip";
+              }
+              if (optional) {
+                return `Optional — leave blank to hide on certificate`;
+              }
+              return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
+            })();
             return (
               <div
                 key={f.key}
@@ -564,8 +581,10 @@ export function BuilderPage() {
                     {fieldLabel(f.key, f.label)}
                     {f.static ? (
                       <span className="optional-tag">On every cert</span>
+                    ) : required ? (
+                      <span className="optional-tag">Required</span>
                     ) : optional ? (
-                      <span className="optional-tag">Optional</span>
+                      <span className="optional-tag">Not required</span>
                     ) : null}
                   </label>
                   {!isStandard && (
@@ -589,20 +608,18 @@ export function BuilderPage() {
                 </div>
                 <input
                   id={`val-${f.key}`}
-                  placeholder={
-                    f.key === "cert_title"
-                      ? "e.g. Certificate of Achievement"
-                      : f.key === "cert_id"
-                        ? "Only if you want an ID printed"
-                        : f.key === "issue_date"
-                          ? "e.g. 11 Aug 2026"
-                          : `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`
-                  }
+                  placeholder={placeholder}
                   value={values[f.key] || ""}
                   onChange={(e) => updateValue(f.key, e.target.value)}
                   onFocus={() => setSelectedKey(f.key)}
                   style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
                 />
+                {optional && !(values[f.key] || "").trim() && (
+                  <p className="field-optional-hint">
+                    Not mandatory — if you leave this blank, it will not appear on the
+                    certificate.
+                  </p>
+                )}
                 {active && (
                   <div className="field-row-style" onClick={(e) => e.stopPropagation()}>
                     <label className="style-chip style-chip-grow">

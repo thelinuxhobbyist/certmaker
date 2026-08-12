@@ -494,6 +494,13 @@ textarea {
   color: var(--cds-text-muted);
 }
 
+.field-optional-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--cds-text-muted);
+}
+
 .optional-tag {
   font-weight: 400;
   color: var(--cds-text-muted);
