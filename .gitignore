@@ -1,0 +1,9 @@
+node_modules/
+web/dist/
+dist/
+.wrangler/
+.dev.vars
+.DS_Store
+*.log
+.turbo/
+worker-configuration.d.ts
