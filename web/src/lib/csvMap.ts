@@ -1,4 +1,4 @@
-import type { FieldConfig } from "./api";
+import { isImageField, isTextField, type FieldConfig } from "./api";
 
 function norm(value: string): string {
   return value
@@ -93,11 +93,15 @@ function scoreHeader(header: string, field: FieldConfig): number {
 /**
  * Map spreadsheet columns to certificate fields.
  * Works with name-only files, or name + course + id, etc.
+ * Static title/logo fields are not mapped from CSV.
  */
 export function autoMapColumns(
   headers: string[],
   fields: FieldConfig[],
 ): Record<string, string> {
+  const mappable = fields.filter(
+    (f) => isTextField(f) && !f.static && !isImageField(f),
+  );
   const cleanHeaders = headers.map((h) => h.trim()).filter(Boolean);
   const mapping: Record<string, string> = {};
   const used = new Set<string>();
@@ -105,16 +109,16 @@ export function autoMapColumns(
   // Single-column file → treat as names
   if (cleanHeaders.length === 1) {
     const nameField =
-      fields.find((f) => f.key === "student_name") || fields[0];
+      mappable.find((f) => f.key === "student_name") || mappable[0];
     if (nameField) mapping[nameField.key] = cleanHeaders[0];
-    for (const field of fields) {
+    for (const field of mappable) {
       if (!mapping[field.key]) mapping[field.key] = "";
     }
     return mapping;
   }
 
   // Best match per field, no double-use of the same column
-  const ranked = fields
+  const ranked = mappable
     .map((field) => {
       let bestHeader = "";
       let bestScore = 0;

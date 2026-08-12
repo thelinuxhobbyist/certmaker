@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { api, type CustomData, type Template } from "../lib/api";
+import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
 import { autoMapColumns, unusedHeaders } from "../lib/csvMap";
 
 function niceLabel(field: { key: string; label?: string }) {
@@ -258,7 +258,9 @@ export function BatchPage() {
             list does not have that information.
           </p>
           <div className="section-grid">
-            {template.fields_config.map((field) => (
+            {template.fields_config
+              .filter((field) => isTextField(field) && !field.static && !isImageField(field))
+              .map((field) => (
               <div key={field.key} className="field-item" style={{ cursor: "default" }}>
                 <label htmlFor={`map-${field.key}`}>
                   {niceLabel(field)}

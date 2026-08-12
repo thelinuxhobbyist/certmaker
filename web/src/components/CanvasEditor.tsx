@@ -1,6 +1,12 @@
-import { Stage, Layer, Image as KonvaImage, Text, Rect, Group } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Text, Rect, Group, Transformer } from "react-konva";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FieldConfig } from "../lib/api";
+import type Konva from "konva";
+import {
+  isImageField,
+  isTextField,
+  type FieldConfig,
+} from "../lib/api";
+import { DEFAULT_FONT_FAMILY } from "../lib/fonts";
 
 function useHtmlImage(url: string | null) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -15,7 +21,6 @@ function useHtmlImage(url: string | null) {
 
     let cancelled = false;
     const img = new window.Image();
-    // crossOrigin breaks some blob: loads; only set for http(s)
     if (/^https?:/i.test(url)) {
       img.crossOrigin = "anonymous";
     }
@@ -56,9 +61,105 @@ interface CanvasEditorProps {
   backgroundUrl: string | null;
   fields: FieldConfig[];
   values: Record<string, string>;
+  /** Local/object URLs for image fields keyed by field.key */
+  imageUrls?: Record<string, string | null>;
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
   onChangeField: (key: string, patch: Partial<FieldConfig>) => void;
+}
+
+function LogoNode({
+  field,
+  url,
+  selected,
+  scale,
+  onSelect,
+  onChangeField,
+}: {
+  field: FieldConfig;
+  url: string | null;
+  selected: boolean;
+  scale: number;
+  onSelect: (key: string) => void;
+  onChangeField: (key: string, patch: Partial<FieldConfig>) => void;
+}) {
+  const { image } = useHtmlImage(url);
+  const shapeRef = useRef<Konva.Image>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+  const w = field.width ?? 160;
+  const h = field.height ?? 80;
+
+  useEffect(() => {
+    if (!selected || !shapeRef.current || !trRef.current) return;
+    trRef.current.nodes([shapeRef.current]);
+    trRef.current.getLayer()?.batchDraw();
+  }, [selected, w, h, image]);
+
+  if (!image && !selected) return null;
+
+  return (
+    <>
+      <KonvaImage
+        ref={shapeRef}
+        image={image ?? undefined}
+        x={field.x}
+        y={field.y}
+        width={w}
+        height={h}
+        draggable
+        onClick={() => onSelect(field.key)}
+        onTap={() => onSelect(field.key)}
+        onDragEnd={(e) => {
+          onChangeField(field.key, {
+            x: Math.round(e.target.x()),
+            y: Math.round(e.target.y()),
+          });
+        }}
+        onTransformEnd={() => {
+          const node = shapeRef.current;
+          if (!node) return;
+          const scaleX = node.scaleX();
+          const scaleY = node.scaleY();
+          node.scaleX(1);
+          node.scaleY(1);
+          onChangeField(field.key, {
+            x: Math.round(node.x()),
+            y: Math.round(node.y()),
+            width: Math.max(40, Math.round(node.width() * scaleX)),
+            height: Math.max(24, Math.round(node.height() * scaleY)),
+          });
+        }}
+      />
+      {selected && (
+        <Transformer
+          ref={trRef}
+          rotateEnabled={false}
+          enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
+          borderStroke="#d97757"
+          anchorStroke="#d97757"
+          anchorFill="#fff"
+          anchorSize={Math.max(8, 10 / scale)}
+          boundBoxFunc={(oldBox, newBox) => {
+            if (newBox.width < 40 || newBox.height < 24) return oldBox;
+            return newBox;
+          }}
+        />
+      )}
+      {selected && !image && (
+        <Rect
+          x={field.x}
+          y={field.y}
+          width={w}
+          height={h}
+          stroke="#d97757"
+          dash={[6, 4]}
+          strokeWidth={Math.max(1.5, 2 / scale)}
+          fill="rgba(217, 119, 87, 0.08)"
+          listening={false}
+        />
+      )}
+    </>
+  );
 }
 
 export function CanvasEditor({
@@ -67,6 +168,7 @@ export function CanvasEditor({
   backgroundUrl,
   fields,
   values,
+  imageUrls = {},
   selectedKey,
   onSelect,
   onChangeField,
@@ -116,27 +218,45 @@ export function CanvasEditor({
             )}
 
             {fields.map((field) => {
+              if (isImageField(field)) {
+                return (
+                  <LogoNode
+                    key={field.key}
+                    field={field}
+                    url={imageUrls[field.key] ?? null}
+                    selected={selectedKey === field.key}
+                    scale={scale}
+                    onSelect={onSelect}
+                    onChangeField={onChangeField}
+                  />
+                );
+              }
+
+              if (!isTextField(field)) return null;
+
               const filled = (values[field.key] || "").trim();
-              const isEmpty = !filled;
+              const previewText = filled || field.defaultValue?.trim() || "";
               const selected = selectedKey === field.key;
-              // Optional fields (everything except student name) stay off the
-              // preview until typed or selected — matches final render behavior.
-              const alwaysShowPlaceholder = field.key === "student_name";
-              if (isEmpty && !alwaysShowPlaceholder && !selected) return null;
+              const alwaysShowPlaceholder =
+                field.key === "student_name" || Boolean(field.static);
+              if (!previewText && !alwaysShowPlaceholder && !selected) return null;
 
               const label = fieldLabel(field.key, field.label);
-              const display = filled || label;
+              const display = previewText || label;
+              const fontSize = field.fontSize ?? 40;
               const textWidth = Math.max(
-                Math.round(field.fontSize * 4.5),
-                Math.round(display.length * field.fontSize * 0.58),
+                Math.round(fontSize * 4.5),
+                Math.round(display.length * fontSize * 0.58),
               );
+              const align = field.textAlign ?? "center";
               const x =
-                field.textAlign === "center"
+                align === "center"
                   ? field.x - textWidth / 2
-                  : field.textAlign === "right"
+                  : align === "right"
                     ? field.x - textWidth
                     : field.x;
-              const y = field.y - field.fontSize;
+              const y = field.y - fontSize;
+              const showAsPlaceholder = !previewText;
 
               return (
                 <Group
@@ -151,14 +271,14 @@ export function CanvasEditor({
                     const nx = node.x();
                     const ny = node.y();
                     const anchorX =
-                      field.textAlign === "center"
+                      align === "center"
                         ? nx + textWidth / 2
-                        : field.textAlign === "right"
+                        : align === "right"
                           ? nx + textWidth
                           : nx;
                     onChangeField(field.key, {
                       x: Math.round(anchorX),
-                      y: Math.round(ny + field.fontSize),
+                      y: Math.round(ny + fontSize),
                     });
                   }}
                 >
@@ -167,32 +287,34 @@ export function CanvasEditor({
                       x={-10}
                       y={-8}
                       width={textWidth + 20}
-                      height={field.fontSize + 22}
+                      height={fontSize + 22}
                       stroke="#d97757"
                       strokeWidth={Math.max(2, 2 / scale)}
                       cornerRadius={6}
                       fill="rgba(217, 119, 87, 0.08)"
                     />
                   )}
-                  {isEmpty && (
+                  {showAsPlaceholder && (
                     <Rect
                       x={0}
-                      y={field.fontSize + 4}
+                      y={fontSize + 4}
                       width={textWidth}
-                      height={Math.max(2, Math.round(field.fontSize * 0.06))}
+                      height={Math.max(2, Math.round(fontSize * 0.06))}
                       fill="rgba(11, 11, 11, 0.28)"
                       cornerRadius={1}
                     />
                   )}
                   <Text
                     text={display}
-                    fontSize={field.fontSize}
-                    fill={isEmpty ? "rgba(11, 11, 11, 0.35)" : field.fontColor}
-                    fontFamily={
-                      field.fontFamily || "Instrument Sans, Avenir Next, sans-serif"
+                    fontSize={fontSize}
+                    fill={
+                      showAsPlaceholder
+                        ? "rgba(11, 11, 11, 0.35)"
+                        : field.fontColor || "#0b0b0b"
                     }
+                    fontFamily={field.fontFamily || DEFAULT_FONT_FAMILY}
                     fontStyle={field.fontWeight === "bold" ? "bold" : "normal"}
-                    align={field.textAlign}
+                    align={align}
                     width={textWidth}
                     listening={false}
                   />
@@ -203,10 +325,14 @@ export function CanvasEditor({
         </Stage>
       </div>
       {!backgroundUrl && (
-        <p className="canvas-hint muted">Upload a background to see it here. You can still place text now.</p>
+        <p className="canvas-hint muted">
+          Upload a background to see it here. You can still place text now.
+        </p>
       )}
       {backgroundUrl && failed && (
-        <p className="canvas-hint muted">Could not load the background image. Try uploading again.</p>
+        <p className="canvas-hint muted">
+          Could not load the background image. Try uploading again.
+        </p>
       )}
     </div>
   );

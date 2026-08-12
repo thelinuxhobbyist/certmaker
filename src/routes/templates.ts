@@ -73,7 +73,10 @@ export async function getTemplate(c: Context<AppEnv>) {
   });
 }
 
-export async function uploadBackground(c: Context<AppEnv>) {
+async function putImageUpload(
+  c: Context<AppEnv>,
+  opts: { prefix: string; idPrefix: string },
+) {
   const form = await c.req.parseBody();
   const file = form.file;
   const userId = dbUserId(c.get("userId"));
@@ -84,21 +87,33 @@ export async function uploadBackground(c: Context<AppEnv>) {
 
   const mime = resolveBackgroundMime(file);
   if (!mime) {
-    return c.json({ error: "Background must be a PNG, JPEG, or WebP image" }, 400);
+    return c.json({ error: "Image must be a PNG, JPEG, or WebP" }, 400);
   }
 
   if (file.size > MAX_BG_BYTES) {
-    return c.json({ error: "Background must be 10MB or smaller" }, 400);
+    return c.json({ error: "Image must be 10MB or smaller" }, 400);
   }
 
-  // Backgrounds stay in R2 for the design session; generated certs do not.
   const ext = extensionForMime(mime);
-  const key = `backgrounds/${userId}/${createId("bg")}.${ext}`;
+  const key = `${opts.prefix}/${userId}/${createId(opts.idPrefix)}.${ext}`;
   await c.env.BUCKET.put(key, await file.arrayBuffer(), {
     httpMetadata: { contentType: mime },
   });
 
-  return c.json({ background_r2_key: key, background_url: `/api/assets/${key}` });
+  return { key, url: `/api/assets/${key}` };
+}
+
+export async function uploadBackground(c: Context<AppEnv>) {
+  // Backgrounds stay in R2 for the design session; generated certs do not.
+  const result = await putImageUpload(c, { prefix: "backgrounds", idPrefix: "bg" });
+  if (result instanceof Response) return result;
+  return c.json({ background_r2_key: result.key, background_url: result.url });
+}
+
+export async function uploadLogo(c: Context<AppEnv>) {
+  const result = await putImageUpload(c, { prefix: "logos", idPrefix: "logo" });
+  if (result instanceof Response) return result;
+  return c.json({ logo_r2_key: result.key, logo_url: result.url });
 }
 
 export async function createTemplate(c: Context<AppEnv>) {

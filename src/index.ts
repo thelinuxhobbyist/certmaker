@@ -6,6 +6,7 @@ import {
   getTemplate,
   listTemplates,
   uploadBackground,
+  uploadLogo,
 } from "./routes/templates";
 import { generateBatch, generateSingle } from "./routes/certificates";
 import { verifyCertificate } from "./routes/verify";
@@ -42,6 +43,7 @@ app.get("/api/templates", listTemplates);
 app.get("/api/templates/:id", getTemplate);
 app.post("/api/templates", createTemplate);
 app.post("/api/templates/upload-bg", uploadBackground);
+app.post("/api/templates/upload-logo", uploadLogo);
 
 app.post("/api/certificates/generate-single", generateSingle);
 app.post("/api/certificates/batch", generateBatch);

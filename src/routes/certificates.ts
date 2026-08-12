@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import {
   arrayBufferToDataUrl,
   buildCertificateSvg,
+  mergeStaticFieldData,
   pngToPdf,
   renderPngFromSvg,
 } from "../lib/render";
@@ -13,6 +14,7 @@ import {
   type RenderedCertificate,
 } from "../lib/storagePolicy";
 import type { CustomData, FieldConfig, TemplateRecord } from "../lib/types";
+import { isImageField } from "../lib/types";
 
 type AppEnv = {
   Bindings: Env;
@@ -55,14 +57,25 @@ async function renderCertificate(
   const providedCertId = (customData.cert_id || "").trim();
   const recordId = providedCertId || createCertId();
 
-  const data: CustomData = {
+  const data: CustomData = mergeStaticFieldData(fields, {
     ...customData,
     student_name: studentName,
-  };
+  });
   if (providedCertId) {
     data.cert_id = providedCertId;
   } else {
     delete data.cert_id;
+  }
+
+  const imageDataUrls: Record<string, string> = {};
+  for (const field of fields) {
+    if (!isImageField(field) || !field.image_r2_key) continue;
+    if (imageDataUrls[field.image_r2_key]) continue;
+    const logoObj = await env.BUCKET.get(field.image_r2_key);
+    if (!logoObj) continue;
+    const logoBuf = await logoObj.arrayBuffer();
+    const logoType = logoObj.httpMetadata?.contentType || "image/png";
+    imageDataUrls[field.image_r2_key] = arrayBufferToDataUrl(logoBuf, logoType);
   }
 
   const svg = buildCertificateSvg({
@@ -71,6 +84,7 @@ async function renderCertificate(
     backgroundDataUrl,
     fields,
     data,
+    imageDataUrls,
   });
 
   const pngBytes = await renderPngFromSvg(svg);
@@ -97,8 +111,10 @@ function zipResponse(
     elapsed_ms: number;
   },
 ) {
-  const bytes = opts.zipBytes;
-  return c.body(bytes, 200, {
+  const bytes = opts.zipBytes instanceof Uint8Array
+    ? opts.zipBytes
+    : new Uint8Array(opts.zipBytes);
+  return c.body(bytes.buffer as ArrayBuffer, 200, {
     "Content-Type": "application/zip",
     "Content-Disposition": `attachment; filename="${opts.filename}"`,
     "X-Certify-Policy": opts.policy,

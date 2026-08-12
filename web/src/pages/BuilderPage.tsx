@@ -1,40 +1,90 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
-import { api, type FieldConfig } from "../lib/api";
+import {
+  api,
+  isImageField,
+  isTextField,
+  type FieldConfig,
+} from "../lib/api";
+import {
+  CERT_FONTS,
+  DEFAULT_FONT_FAMILY,
+  TITLE_FONT_FAMILY,
+  ensureCertFontsLoaded,
+} from "../lib/fonts";
 import { normalizeBackgroundImage, readImageSize } from "../lib/image";
 
-const STANDARD_FIELDS: Array<{ key: string; label: string; optional?: boolean }> = [
+const STANDARD_FIELDS: Array<{
+  key: string;
+  label: string;
+  optional?: boolean;
+  static?: boolean;
+  defaultValue?: string;
+}> = [
+  {
+    key: "cert_title",
+    label: "Certificate title",
+    static: true,
+    defaultValue: "Certificate of Achievement",
+  },
   { key: "student_name", label: "Student name" },
   { key: "issue_date", label: "Issue date", optional: true },
   { key: "cert_id", label: "Certificate ID", optional: true },
 ];
 
 function defaultFontSize(key: string): number {
+  if (key === "cert_title") return 56;
   if (key === "student_name") return 72;
   if (key === "issue_date") return 36;
   if (key === "cert_id") return 26;
   return 40;
 }
 
-function defaultField(key: string, label: string, index: number): FieldConfig {
+function defaultFontFamily(key: string): string {
+  if (key === "cert_title") return TITLE_FONT_FAMILY;
+  if (key === "student_name") return "Lora";
+  return DEFAULT_FONT_FAMILY;
+}
+
+function defaultField(
+  key: string,
+  label: string,
+  index: number,
+  extras?: Partial<FieldConfig>,
+): FieldConfig {
   const fontSize = defaultFontSize(key);
   return {
     key,
     label,
+    type: "text",
     x: 600,
-    y: 340 + index * 90,
+    y: key === "cert_title" ? 220 : 340 + Math.max(0, index - 1) * 90,
     fontSize,
     fontColor: "#0b0b0b",
+    fontFamily: defaultFontFamily(key),
     textAlign: "center",
-    fontWeight: key === "student_name" ? "bold" : "normal",
+    fontWeight: key === "student_name" || key === "cert_title" ? "bold" : "normal",
+    ...extras,
   };
 }
 
 function emptyValues(fields: FieldConfig[]): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const field of fields) values[field.key] = "";
+  for (const field of fields) {
+    if (!isTextField(field)) continue;
+    values[field.key] = field.defaultValue || "";
+  }
   return values;
+}
+
+function initialFields(): FieldConfig[] {
+  return STANDARD_FIELDS.map((f, i) =>
+    defaultField(f.key, f.label, i, {
+      static: f.static,
+      defaultValue: f.defaultValue,
+    }),
+  );
 }
 
 export function BuilderPage() {
@@ -45,13 +95,12 @@ export function BuilderPage() {
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [width, setWidth] = useState(1200);
   const [height, setHeight] = useState(850);
-  const [fields, setFields] = useState<FieldConfig[]>(
-    STANDARD_FIELDS.map((f, i) => defaultField(f.key, f.label, i)),
-  );
+  const [fields, setFields] = useState<FieldConfig[]>(initialFields);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    emptyValues(STANDARD_FIELDS.map((f, i) => defaultField(f.key, f.label, i))),
+    emptyValues(initialFields()),
   );
-  const [selectedKey, setSelectedKey] = useState<string | null>("student_name");
+  const [imageUrls, setImageUrls] = useState<Record<string, string | null>>({});
+  const [selectedKey, setSelectedKey] = useState<string | null>("cert_title");
   const [globalColor, setGlobalColor] = useState("#0b0b0b");
   const [customLabel, setCustomLabel] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -64,13 +113,30 @@ export function BuilderPage() {
     elapsed_ms: number;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const bgFileRef = useRef<File | null>(null);
   const [bgFileName, setBgFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [fontsLoaded, setFontsLoaded] = useState(false);
 
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
   const studentName = (values.student_name || "").trim();
+  const hasLogo = fields.some((f) => isImageField(f) && f.image_r2_key);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureCertFontsLoaded()
+      .then(() => {
+        if (!cancelled) setFontsLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setFontsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateField(key: string, patch: Partial<FieldConfig>) {
     setFields((prev) => prev.map((f) => (f.key === key ? { ...f, ...patch } : f)));
@@ -79,19 +145,30 @@ export function BuilderPage() {
   function updateValue(key: string, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
     setSelectedKey(key);
+    // Keep static defaultValue in sync so downloads / batch use the typed text.
+    const field = fields.find((f) => f.key === key);
+    if (field?.static) {
+      updateField(key, { defaultValue: value });
+    }
   }
 
   function applyGlobalColor(color: string) {
     setGlobalColor(color);
-    setFields((prev) => prev.map((f) => ({ ...f, fontColor: color })));
+    setFields((prev) =>
+      prev.map((f) => (isTextField(f) ? { ...f, fontColor: color } : f)),
+    );
   }
 
   function bumpAllSizes(delta: number) {
     setFields((prev) =>
-      prev.map((f) => ({
-        ...f,
-        fontSize: Math.max(18, Math.min(140, f.fontSize + delta)),
-      })),
+      prev.map((f) =>
+        isTextField(f)
+          ? {
+              ...f,
+              fontSize: Math.max(18, Math.min(140, (f.fontSize ?? 40) + delta)),
+            }
+          : f,
+      ),
     );
   }
 
@@ -125,13 +202,13 @@ export function BuilderPage() {
       setWidth(dims.width);
       setHeight(dims.height);
     } catch {
-      // keep defaults; preview still uses the file
+      // keep defaults
     }
     setStatus("Uploading background…");
     setUploading(true);
     try {
       await uploadBackgroundFile(normalized);
-      setStatus("Background ready. Type in the fields — the preview updates as you type.");
+      setStatus("Background ready. Edit the title and details — the preview updates as you type.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       setStatus(
@@ -140,6 +217,82 @@ export function BuilderPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function onLogoUpload(file: File | null) {
+    if (!file) return;
+    setError(null);
+    setStatus("Preparing logo…");
+    let normalized: File;
+    try {
+      normalized = await normalizeBackgroundImage(file);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not use this logo");
+      setStatus(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(normalized);
+    let logoW = 180;
+    let logoH = 90;
+    try {
+      const dims = await readImageSize(normalized);
+      const maxW = 220;
+      const scale = Math.min(1, maxW / dims.width);
+      logoW = Math.round(dims.width * scale);
+      logoH = Math.round(dims.height * scale);
+    } catch {
+      // defaults
+    }
+
+    setUploading(true);
+    setStatus("Uploading logo…");
+    try {
+      const res = await api.uploadLogo(normalized);
+      const existing = fields.find((f) => f.key === "logo");
+      const logoField: FieldConfig = {
+        key: "logo",
+        label: "Organisation logo",
+        type: "image",
+        static: true,
+        x: existing?.x ?? 60,
+        y: existing?.y ?? 50,
+        width: existing?.width ?? logoW,
+        height: existing?.height ?? logoH,
+        image_r2_key: res.logo_r2_key,
+      };
+      setFields((prev) => {
+        if (prev.some((f) => f.key === "logo")) {
+          return prev.map((f) => (f.key === "logo" ? { ...f, ...logoField } : f));
+        }
+        return [logoField, ...prev];
+      });
+      setImageUrls((prev) => {
+        const old = prev.logo;
+        if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+        return { ...prev, logo: objectUrl };
+      });
+      setSelectedKey("logo");
+      setStatus("Logo added — drag or resize it on the preview.");
+    } catch (err) {
+      URL.revokeObjectURL(objectUrl);
+      setError(err instanceof Error ? err.message : "Logo upload failed");
+      setStatus(null);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeLogo() {
+    setFields((prev) => prev.filter((f) => f.key !== "logo"));
+    setImageUrls((prev) => {
+      const old = prev.logo;
+      if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+      const next = { ...prev };
+      delete next.logo;
+      return next;
+    });
+    if (selectedKey === "logo") setSelectedKey("cert_title");
   }
 
   function openBackgroundPicker() {
@@ -153,7 +306,7 @@ export function BuilderPage() {
       openBackgroundPicker();
       return;
     }
-    document.getElementById("val-student_name")?.focus();
+    document.getElementById("val-cert_title")?.focus();
   }
 
   function addCustomField() {
@@ -164,7 +317,7 @@ export function BuilderPage() {
       setError(`Field "${label}" already exists`);
       return;
     }
-    const next = defaultField(key, label, fields.length);
+    const next = defaultField(key, label, fields.filter(isTextField).length);
     next.fontColor = globalColor;
     setFields((prev) => [...prev, next]);
     setValues((prev) => ({ ...prev, [key]: "" }));
@@ -185,12 +338,25 @@ export function BuilderPage() {
     }
   }
 
+  function fieldsForSave(): FieldConfig[] {
+    return fields.map((f) => {
+      if (!isTextField(f)) return f;
+      if (f.static) {
+        return {
+          ...f,
+          defaultValue: (values[f.key] || f.defaultValue || "").trim(),
+        };
+      }
+      return f;
+    });
+  }
+
   async function ensureTemplate(): Promise<string> {
     const key = await ensureBackgroundUploaded();
     const tpl = await api.createTemplate({
       title,
       background_r2_key: key,
-      fields_config: fields,
+      fields_config: fieldsForSave(),
       width,
       height,
     });
@@ -215,9 +381,13 @@ export function BuilderPage() {
     try {
       const templateId = await ensureTemplate();
       const custom_data: Record<string, string> = {};
-      for (const [key, value] of Object.entries(values)) {
-        if (key === "student_name") continue;
-        if (value.trim()) custom_data[key] = value.trim();
+      for (const field of fieldsForSave()) {
+        if (!isTextField(field)) continue;
+        if (field.key === "student_name") continue;
+        const value = field.static
+          ? (field.defaultValue || "").trim()
+          : (values[field.key] || "").trim();
+        if (value) custom_data[field.key] = value;
       }
       const zip = await api.generateSingle({
         template_id: templateId,
@@ -262,8 +432,9 @@ export function BuilderPage() {
     <section className="panel designer-panel">
       <h2>Design a certificate</h2>
       <p className="lede">
-        Upload a background image, place the text, and type sample details to preview.
-        When it looks right, download one certificate or make many from a CSV list.
+        Upload a background, set the certificate title and logo, place the text, and
+        type sample details to preview. When it looks right, download one certificate
+        or make many from a CSV list.
       </p>
 
       <div className="designer-setup">
@@ -296,21 +467,51 @@ export function BuilderPage() {
             </span>
           </div>
         </div>
+        <div className="field">
+          <label htmlFor="logo">Organisation logo (optional)</label>
+          <div className="file-picker">
+            <input
+              id="logo"
+              ref={logoInputRef}
+              className="file-input-hidden"
+              type="file"
+              accept="image/*"
+              onChange={(e) => void onLogoUpload(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => logoInputRef.current?.click()}
+            >
+              {hasLogo ? "Change logo" : "Add logo"}
+            </button>
+            {hasLogo && (
+              <button type="button" className="linkish" onClick={removeLogo}>
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="preview-label">Preview</div>
+      <div className="preview-label">
+        Preview
+        {!fontsLoaded ? <span className="optional-tag">Loading fonts…</span> : null}
+      </div>
       <CanvasEditor
         width={width}
         height={height}
         backgroundUrl={previewUrl}
         fields={fields}
         values={values}
+        imageUrls={imageUrls}
         selectedKey={selectedKey}
         onSelect={setSelectedKey}
         onChangeField={updateField}
       />
       <p className="muted preview-hint">
-        Drag text on the preview to place it. Fill in the details below to see them appear.
+        Drag text and the logo on the preview to place them. Resize the logo with the
+        corner handles.
       </p>
 
       <div className="designer-controls">
@@ -348,7 +549,7 @@ export function BuilderPage() {
         </div>
 
         <div className="field-stack">
-          {fields.map((f) => {
+          {fields.filter(isTextField).map((f) => {
             const isStandard = STANDARD_FIELDS.some((s) => s.key === f.key);
             const optional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
             const active = selectedKey === f.key;
@@ -361,7 +562,11 @@ export function BuilderPage() {
                 <div className="field-row-top">
                   <label htmlFor={`val-${f.key}`}>
                     {fieldLabel(f.key, f.label)}
-                    {optional ? <span className="optional-tag">Optional</span> : null}
+                    {f.static ? (
+                      <span className="optional-tag">On every cert</span>
+                    ) : optional ? (
+                      <span className="optional-tag">Optional</span>
+                    ) : null}
                   </label>
                   {!isStandard && (
                     <button
@@ -385,27 +590,51 @@ export function BuilderPage() {
                 <input
                   id={`val-${f.key}`}
                   placeholder={
-                    f.key === "cert_id"
-                      ? "Only if you want an ID printed"
-                      : f.key === "issue_date"
-                        ? "e.g. 11 Aug 2026"
-                        : `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`
+                    f.key === "cert_title"
+                      ? "e.g. Certificate of Achievement"
+                      : f.key === "cert_id"
+                        ? "Only if you want an ID printed"
+                        : f.key === "issue_date"
+                          ? "e.g. 11 Aug 2026"
+                          : `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`
                   }
                   value={values[f.key] || ""}
                   onChange={(e) => updateValue(f.key, e.target.value)}
                   onFocus={() => setSelectedKey(f.key)}
+                  style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
                 />
                 {active && (
                   <div className="field-row-style" onClick={(e) => e.stopPropagation()}>
+                    <label className="style-chip style-chip-grow">
+                      <span>Font</span>
+                      <select
+                        value={f.fontFamily || DEFAULT_FONT_FAMILY}
+                        onChange={(e) =>
+                          updateField(f.key, { fontFamily: e.target.value })
+                        }
+                      >
+                        {CERT_FONTS.map((font) => (
+                          <option
+                            key={font.id}
+                            value={font.family}
+                            style={{ fontFamily: font.family }}
+                          >
+                            {font.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <label className="style-chip">
                       <span>Size</span>
                       <input
                         type="number"
                         min={18}
                         max={140}
-                        value={f.fontSize}
+                        value={f.fontSize ?? 40}
                         onChange={(e) =>
-                          updateField(f.key, { fontSize: Number(e.target.value) || 18 })
+                          updateField(f.key, {
+                            fontSize: Number(e.target.value) || 18,
+                          })
                         }
                       />
                     </label>
@@ -413,14 +642,16 @@ export function BuilderPage() {
                       <span>Colour</span>
                       <input
                         type="color"
-                        value={f.fontColor}
-                        onChange={(e) => updateField(f.key, { fontColor: e.target.value })}
+                        value={f.fontColor || "#0b0b0b"}
+                        onChange={(e) =>
+                          updateField(f.key, { fontColor: e.target.value })
+                        }
                       />
                     </label>
                     <label className="style-chip style-chip-grow">
                       <span>Align</span>
                       <select
-                        value={f.textAlign}
+                        value={f.textAlign || "center"}
                         onChange={(e) =>
                           updateField(f.key, {
                             textAlign: e.target.value as FieldConfig["textAlign"],
@@ -464,7 +695,7 @@ export function BuilderPage() {
                 : !studentName
                   ? "Enter the student name. Other fields are optional."
                   : uploading
-                    ? "Uploading background…"
+                    ? "Uploading…"
                     : "Download one certificate now, or save this design for a CSV batch."}
             </p>
           </div>
@@ -496,8 +727,8 @@ export function BuilderPage() {
         <div className="result-card">
           <h3>Download ready</h3>
           <p className="muted">
-            Your certificate zip ({result.filename}) should have downloaded.
-            Files are not stored on our servers after generation.
+            Your certificate zip ({result.filename}) should have downloaded. Files are
+            not stored on our servers after generation.
           </p>
         </div>
       )}

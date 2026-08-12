@@ -196,6 +196,9 @@ textarea {
 }
 
 .preview-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--cds-text-muted);
@@ -335,7 +338,7 @@ textarea {
 
 @media (min-width: 760px) {
   .designer-setup {
-    grid-template-columns: 1.15fr 1fr;
+    grid-template-columns: 1.1fr 1fr 1fr;
   }
 }
 

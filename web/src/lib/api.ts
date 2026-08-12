@@ -1,15 +1,22 @@
 export type TextAlign = "left" | "center" | "right";
+export type FieldType = "text" | "image";
 
 export interface FieldConfig {
   key: string;
   label?: string;
+  type?: FieldType;
+  static?: boolean;
+  defaultValue?: string;
   x: number;
   y: number;
-  fontSize: number;
-  fontColor: string;
+  fontSize?: number;
+  fontColor?: string;
   fontFamily?: string;
-  textAlign: TextAlign;
+  textAlign?: TextAlign;
   fontWeight?: "normal" | "bold";
+  image_r2_key?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface Template {
@@ -33,6 +40,14 @@ export type ZipDownloadResult = {
   filename: string;
   policy: string;
 };
+
+export function isTextField(field: FieldConfig): boolean {
+  return (field.type ?? "text") === "text";
+}
+
+export function isImageField(field: FieldConfig): boolean {
+  return field.type === "image";
+}
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -89,6 +104,14 @@ export const api = {
     form.append("file", file);
     return requestJson<{ background_r2_key: string; background_url: string }>(
       "/api/templates/upload-bg",
+      { method: "POST", body: form },
+    );
+  },
+  uploadLogo: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return requestJson<{ logo_r2_key: string; logo_url: string }>(
+      "/api/templates/upload-logo",
       { method: "POST", body: form },
     );
   },
