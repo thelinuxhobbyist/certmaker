@@ -250,6 +250,8 @@ textarea {
 }
 
 .template-card {
+  display: block;
+  width: 100%;
   border: 1.5px solid var(--border);
   border-radius: 12px;
   padding: 14px;
@@ -1348,6 +1350,127 @@ textarea {
   margin-top: 0.35rem;
 }
 
+/* ---------- Homepage ---------- */
+
+.home {
+  max-width: 980px;
+  margin: 0 auto;
+  padding-bottom: 72px;
+}
+
+.home-hero {
+  text-align: center;
+  padding: 28px 0 56px;
+}
+
+.home-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-hover);
+  margin: 0 0 10px;
+}
+
+.home-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 3.4rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+  line-height: 1.15;
+}
+
+.home-lead {
+  margin: 0 auto 28px;
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.home-hero .cta-row {
+  justify-content: center;
+}
+
+.home-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-bottom: 56px;
+}
+
+.home-step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 20px 22px;
+}
+
+.home-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-hover);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.home-step h2 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.home-step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.home-designs,
+.home-saved {
+  margin-bottom: 48px;
+}
+
+.home-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.home-designs h2,
+.home-saved h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.home-template-grid {
+  margin-bottom: 0;
+}
+
+a.home-template-card,
+a.saved-card {
+  color: inherit;
+}
+
+a.home-template-card:hover,
+a.saved-card:hover {
+  text-decoration: none;
+}
+
 .issue-actions,
 .issue-actions-row {
   display: flex;
@@ -1400,6 +1523,10 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .home-steps {
+    grid-template-columns: 1fr;
+  }
+
   .topnav,
   .shell,
   .app-main,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { TemplateChooser } from "../components/TemplateChooser";
@@ -27,7 +27,11 @@ import {
   type DateOrder,
 } from "../lib/issueDate";
 import { resolveStarterBackgroundFile } from "../lib/starterBackground";
-import { STARTER_CANVAS, type StarterTemplate } from "../lib/starterTemplates";
+import {
+  STARTER_CANVAS,
+  getStarterTemplate,
+  type StarterTemplate,
+} from "../lib/starterTemplates";
 
 const STANDARD_FIELDS: Array<{
   key: string;
@@ -119,6 +123,8 @@ function mergeValues(
 
 export function BuilderPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const appliedQuery = useRef(false);
   const [view, setView] = useState<"chooser" | "editor">("chooser");
   const [selectedStarterId, setSelectedStarterId] = useState<string | null>(null);
   const [designLabel, setDesignLabel] = useState<string | null>(null);
@@ -289,6 +295,16 @@ export function BuilderPage() {
       void applyStarter(starter);
     }, 160);
   }
+
+  useEffect(() => {
+    if (appliedQuery.current) return;
+    const id = searchParams.get("tpl");
+    if (!id) return;
+    const starter = getStarterTemplate(id);
+    if (!starter) return;
+    appliedQuery.current = true;
+    void applyStarter(starter);
+  }, [searchParams]);
 
   async function onChooseOwnFile(file: File) {
     setSelectedStarterId(null);

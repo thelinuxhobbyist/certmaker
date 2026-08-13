@@ -111,8 +111,11 @@ function LogoNode({
         width={w}
         height={h}
         draggable
+        onMouseDown={() => onSelect(field.key)}
+        onTouchStart={() => onSelect(field.key)}
         onClick={() => onSelect(field.key)}
         onTap={() => onSelect(field.key)}
+        onDragStart={() => onSelect(field.key)}
         onDragEnd={(e) => {
           onChangeField(field.key, {
             x: Math.round(e.target.x()),
@@ -220,9 +223,23 @@ export function CanvasEditor({
         >
           <Layer>
             {image ? (
-              <KonvaImage image={image} x={0} y={0} width={width} height={height} />
+              <KonvaImage
+                image={image}
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                listening={false}
+              />
             ) : (
-              <Rect x={0} y={0} width={width} height={height} fill={backgroundFill} />
+              <Rect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                fill={backgroundFill}
+                listening={false}
+              />
             )}
 
             {fields.map((field) => {
@@ -245,10 +262,6 @@ export function CanvasEditor({
               const filled = (values[field.key] || "").trim();
               const previewText = filled || field.defaultValue?.trim() || "";
               const selected = selectedKey === field.key;
-              const alwaysShowPlaceholder =
-                field.key === "student_name" || Boolean(field.static);
-              if (!previewText && !alwaysShowPlaceholder && !selected) return null;
-
               const label = fieldLabel(field.key, field.label);
               const display = previewText || label;
               const fontSize = field.fontSize ?? 40;
@@ -266,14 +279,31 @@ export function CanvasEditor({
               const y = field.y - fontSize;
               const showAsPlaceholder = !previewText;
 
+              function selectThis() {
+                onSelect(field.key);
+              }
+
+              function setCursor(cursor: string, node: Konva.Node) {
+                const stage = node.getStage();
+                if (stage) stage.container().style.cursor = cursor;
+              }
+
               return (
                 <Group
                   key={field.key}
                   x={x}
                   y={y}
                   draggable
-                  onClick={() => onSelect(field.key)}
-                  onTap={() => onSelect(field.key)}
+                  onMouseDown={selectThis}
+                  onTouchStart={selectThis}
+                  onClick={selectThis}
+                  onTap={selectThis}
+                  onMouseEnter={(e) => setCursor("grab", e.target)}
+                  onMouseLeave={(e) => setCursor("default", e.target)}
+                  onDragStart={(e) => {
+                    selectThis();
+                    setCursor("grabbing", e.target);
+                  }}
                   onDragEnd={(e) => {
                     const node = e.target;
                     const nx = node.x();
@@ -288,20 +318,19 @@ export function CanvasEditor({
                       x: Math.round(anchorX),
                       y: Math.round(ny + fontSize),
                     });
+                    setCursor("grab", node);
                   }}
                 >
-                  {selected && (
-                    <Rect
-                      x={-10}
-                      y={-8}
-                      width={textWidth + 20}
-                      height={fontSize + 22}
-                      stroke="#c96f4a"
-                      strokeWidth={Math.max(2, 2 / scale)}
-                      cornerRadius={6}
-                      fill="rgba(201, 111, 74, 0.08)"
-                    />
-                  )}
+                  <Rect
+                    x={-10}
+                    y={-8}
+                    width={textWidth + 20}
+                    height={fontSize + 22}
+                    stroke={selected ? "#c96f4a" : "transparent"}
+                    strokeWidth={Math.max(2, 2 / scale)}
+                    cornerRadius={6}
+                    fill={selected ? "rgba(201, 111, 74, 0.08)" : "rgba(0,0,0,0.001)"}
+                  />
                   {showAsPlaceholder && (
                     <Rect
                       x={0}
@@ -310,6 +339,7 @@ export function CanvasEditor({
                       height={Math.max(2, Math.round(fontSize * 0.06))}
                       fill="rgba(11, 11, 11, 0.28)"
                       cornerRadius={1}
+                      listening={false}
                     />
                   )}
                   <Text
@@ -324,7 +354,6 @@ export function CanvasEditor({
                     fontStyle={field.fontWeight === "bold" ? "bold" : "normal"}
                     align={align}
                     width={textWidth}
-                    listening={false}
                   />
                 </Group>
               );
