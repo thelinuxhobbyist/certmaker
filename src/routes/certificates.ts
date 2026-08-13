@@ -6,7 +6,7 @@ import {
   pngToPdf,
   renderPngFromSvg,
 } from "../lib/render";
-import { createCertId } from "../lib/ids";
+import { allocateCertIds } from "../lib/ids";
 import { dbUserId, type AppVariables } from "../lib/auth";
 import {
   handleStoragePolicy,
@@ -45,6 +45,7 @@ async function renderCertificate(
   template: TemplateRecord,
   studentName: string,
   customData: CustomData,
+  recordId: string,
 ): Promise<RenderedCertificate> {
   const bgObj = await env.BUCKET.get(template.background_r2_key);
   if (!bgObj) throw new Error("Background image missing from storage");
@@ -54,18 +55,12 @@ async function renderCertificate(
   const backgroundDataUrl = arrayBufferToDataUrl(bgBuf, contentType);
 
   const fields = JSON.parse(template.fields_config) as FieldConfig[];
-  const providedCertId = (customData.cert_id || "").trim();
-  const recordId = providedCertId || createCertId();
 
   const data: CustomData = mergeStaticFieldData(fields, {
     ...customData,
     student_name: studentName,
+    cert_id: recordId,
   });
-  if (providedCertId) {
-    data.cert_id = providedCertId;
-  } else {
-    delete data.cert_id;
-  }
 
   const imageDataUrls: Record<string, string> = {};
   for (const field of fields) {
@@ -139,11 +134,15 @@ export async function generateSingle(c: Context<AppEnv>) {
   const started = Date.now();
 
   try {
+    const [recordId] = await allocateCertIds(c.env.DB, [
+      body.custom_data?.cert_id,
+    ]);
     const rendered = await renderCertificate(
       c.env,
       template,
       body.student_name.trim(),
       body.custom_data || {},
+      recordId,
     );
 
     const stored = await handleStoragePolicy(c.env, {
@@ -151,11 +150,16 @@ export async function generateSingle(c: Context<AppEnv>) {
       certificates: [rendered],
     });
 
-    // Metadata-only log (no R2 asset keys in Phase 1 ephemeral mode)
-    await logEphemeralIssuance(c.env.DB, {
-      userId: dbUserId(userId),
-      certificates: [rendered],
-    });
+    // Metadata-only log (no R2 asset keys in Phase 1 ephemeral mode).
+    // Do not block the download if the log insert fails.
+    try {
+      await logEphemeralIssuance(c.env.DB, {
+        userId: dbUserId(userId),
+        certificates: [rendered],
+      });
+    } catch {
+      // issuance log is best-effort
+    }
 
     return zipResponse(c, {
       zipBytes: stored.zipBytes,
@@ -190,9 +194,13 @@ export async function generateBatch(c: Context<AppEnv>) {
 
   const userId = c.get("userId");
   const started = Date.now();
+  const recordIds = await allocateCertIds(
+    c.env.DB,
+    body.rows.map((row) => row.custom_data?.cert_id),
+  );
 
   const settled = await Promise.all(
-    body.rows.map(async (row) => {
+    body.rows.map(async (row, index) => {
       try {
         if (!row.student_name?.trim()) {
           return { ok: false as const, error: "student_name is required" };
@@ -202,6 +210,7 @@ export async function generateBatch(c: Context<AppEnv>) {
           template,
           row.student_name.trim(),
           row.custom_data || {},
+          recordIds[index],
         );
         return { ok: true as const, rendered };
       } catch (err) {
@@ -236,10 +245,14 @@ export async function generateBatch(c: Context<AppEnv>) {
       certificates: rendered,
     });
 
-    await logEphemeralIssuance(c.env.DB, {
-      userId: dbUserId(userId),
-      certificates: rendered,
-    });
+    try {
+      await logEphemeralIssuance(c.env.DB, {
+        userId: dbUserId(userId),
+        certificates: rendered,
+      });
+    } catch {
+      // issuance log is best-effort — still return the zip
+    }
 
     return zipResponse(c, {
       zipBytes: stored.zipBytes,

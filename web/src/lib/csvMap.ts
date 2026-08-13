@@ -37,9 +37,6 @@ const ALIASES: Record<string, string[]> = {
   cert_id: [
     "cert_id",
     "certificate_id",
-    "certificate",
-    "cert",
-    "id",
     "certificate_number",
     "cert_no",
     "cert_number",
@@ -95,7 +92,9 @@ function aliasesForField(field: FieldConfig): string[] {
     extras.push(...ALIASES.student_name);
   }
   if (key.includes("date")) extras.push(...ALIASES.issue_date);
-  if (key.includes("cert") || key === "id") extras.push(...ALIASES.cert_id);
+  if (key === "cert_id" || key.includes("cert_id") || key.includes("certificate_id")) {
+    extras.push(...ALIASES.cert_id);
+  }
   if (key.includes("grade") || key.includes("result")) extras.push(...ALIASES.grade);
 
   return [...new Set([...known, ...extras])];
