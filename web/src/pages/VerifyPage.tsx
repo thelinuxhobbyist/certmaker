@@ -45,7 +45,7 @@ export function VerifyPage() {
         <p className="muted">
           In this version, certificates are downloaded as a zip and are not kept online for later viewing.
         </p>
-        <Link className="btn btn-secondary" to="/builder">
+        <Link className="btn btn-secondary" to="/">
           Design a certificate
         </Link>
       </section>

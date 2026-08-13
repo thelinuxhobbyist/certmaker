@@ -181,7 +181,7 @@ export function BatchPage() {
         <p className="lede">
           Design a certificate first. Then you can fill it for many people from a spreadsheet.
         </p>
-        <Link className="btn btn-primary" to="/builder">
+        <Link className="btn btn-primary" to="/">
           Design a certificate
         </Link>
       </section>
@@ -219,7 +219,7 @@ export function BatchPage() {
         </div>
         <p className="muted" style={{ marginTop: "0.65rem" }}>
           Want a different look?{" "}
-          <Link className="linkish" to="/builder" style={{ display: "inline" }}>
+          <Link className="linkish" to="/" style={{ display: "inline" }}>
             Design a new one
           </Link>
         </p>
@@ -294,7 +294,7 @@ export function BatchPage() {
             <p className="muted" style={{ marginTop: "0.75rem" }}>
               Not used from your file: {leftoverColumns.join(", ")}. To print these on the
               certificate, add matching sections in{" "}
-              <Link className="linkish" to="/builder" style={{ display: "inline" }}>
+              <Link className="linkish" to="/" style={{ display: "inline" }}>
                 Design
               </Link>
               .

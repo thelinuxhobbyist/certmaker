@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
+import { TemplateChooser } from "../components/TemplateChooser";
 import {
   api,
   isImageField,
   isTextField,
   type FieldConfig,
+  type Template,
 } from "../lib/api";
 import {
   CERT_FONTS,
@@ -14,6 +16,8 @@ import {
   ensureCertFontsLoaded,
 } from "../lib/fonts";
 import { normalizeBackgroundImage, readImageSize } from "../lib/image";
+import { resolveStarterBackgroundFile } from "../lib/starterBackground";
+import { STARTER_CANVAS, type StarterTemplate } from "../lib/starterTemplates";
 
 const STANDARD_FIELDS: Array<{
   key: string;
@@ -35,15 +39,15 @@ const STANDARD_FIELDS: Array<{
 
 function defaultFontSize(key: string): number {
   if (key === "cert_title") return 56;
-  if (key === "student_name") return 72;
-  if (key === "issue_date") return 36;
-  if (key === "cert_id") return 26;
+  if (key === "student_name") return 64;
+  if (key === "issue_date") return 28;
+  if (key === "cert_id") return 22;
   return 40;
 }
 
 function defaultFontFamily(key: string): string {
   if (key === "cert_title") return TITLE_FONT_FAMILY;
-  if (key === "student_name") return "Lora";
+  if (key === "student_name") return "Cormorant Garamond Light";
   return DEFAULT_FONT_FAMILY;
 }
 
@@ -61,7 +65,7 @@ function defaultField(
     x: 600,
     y: key === "cert_title" ? 220 : 340 + Math.max(0, index - 1) * 90,
     fontSize,
-    fontColor: "#0b0b0b",
+    fontColor: "#171717",
     fontFamily: defaultFontFamily(key),
     textAlign: "center",
     fontWeight: key === "student_name" || key === "cert_title" ? "bold" : "normal",
@@ -87,26 +91,48 @@ function initialFields(): FieldConfig[] {
   );
 }
 
+function mergeValues(
+  fields: FieldConfig[],
+  previous: Record<string, string>,
+): Record<string, string> {
+  const next = emptyValues(fields);
+  for (const key of Object.keys(next)) {
+    const prev = (previous[key] || "").trim();
+    if (prev && !fields.find((f) => f.key === key)?.static) {
+      next[key] = prev;
+    } else if (prev && key === "student_name") {
+      next[key] = prev;
+    }
+  }
+  return next;
+}
+
 export function BuilderPage() {
   const navigate = useNavigate();
-  const [title, setTitle] = useState("Course Completion Certificate");
+  const [view, setView] = useState<"chooser" | "editor">("chooser");
+  const [selectedStarterId, setSelectedStarterId] = useState<string | null>(null);
+  const [designLabel, setDesignLabel] = useState<string | null>(null);
+  const [backgroundFill, setBackgroundFill] = useState("#ffffff");
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  const [title, setTitle] = useState("Certificate");
   const [backgroundKey, setBackgroundKey] = useState<string | null>(null);
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
-  const [width, setWidth] = useState(1200);
-  const [height, setHeight] = useState(850);
+  const [width, setWidth] = useState<number>(STARTER_CANVAS.width);
+  const [height, setHeight] = useState<number>(STARTER_CANVAS.height);
   const [fields, setFields] = useState<FieldConfig[]>(initialFields);
   const [values, setValues] = useState<Record<string, string>>(() =>
     emptyValues(initialFields()),
   );
   const [imageUrls, setImageUrls] = useState<Record<string, string | null>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>("cert_title");
-  const [globalColor, setGlobalColor] = useState("#0b0b0b");
   const [customLabel, setCustomLabel] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [downloadDone, setDownloadDone] = useState(false);
   const [result, setResult] = useState<{
     count: number;
     filename: string;
@@ -122,7 +148,9 @@ export function BuilderPage() {
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
   const studentName = (values.student_name || "").trim();
-  const hasLogo = fields.some((f) => isImageField(f) && f.image_r2_key);
+  const logoField = fields.find((f) => isImageField(f) && f.key === "logo");
+  const hasLogo = Boolean(logoField?.image_r2_key);
+  const ready = hasBackground && studentName.length > 0 && !uploading;
 
   useEffect(() => {
     let cancelled = false;
@@ -145,31 +173,10 @@ export function BuilderPage() {
   function updateValue(key: string, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
     setSelectedKey(key);
-    // Keep static defaultValue in sync so downloads / batch use the typed text.
     const field = fields.find((f) => f.key === key);
     if (field?.static) {
       updateField(key, { defaultValue: value });
     }
-  }
-
-  function applyGlobalColor(color: string) {
-    setGlobalColor(color);
-    setFields((prev) =>
-      prev.map((f) => (isTextField(f) ? { ...f, fontColor: color } : f)),
-    );
-  }
-
-  function bumpAllSizes(delta: number) {
-    setFields((prev) =>
-      prev.map((f) =>
-        isTextField(f)
-          ? {
-              ...f,
-              fontSize: Math.max(18, Math.min(140, (f.fontSize ?? 40) + delta)),
-            }
-          : f,
-      ),
-    );
   }
 
   async function uploadBackgroundFile(file: File): Promise<string> {
@@ -179,44 +186,112 @@ export function BuilderPage() {
     return res.background_r2_key;
   }
 
-  async function onUpload(file: File | null) {
-    if (!file) return;
+  async function applyBackgroundFile(
+    file: File,
+    opts?: { label?: string; skipNormalize?: boolean },
+  ) {
     setError(null);
     setResult(null);
+    setDownloadDone(false);
     setStatus("Preparing image…");
     let normalized: File;
     try {
-      normalized = await normalizeBackgroundImage(file);
+      normalized = opts?.skipNormalize ? file : await normalizeBackgroundImage(file);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not use this image");
       setStatus(null);
       return;
     }
     bgFileRef.current = normalized;
-    setBgFileName(normalized.name);
+    setBgFileName(opts?.label ?? normalized.name);
     if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
     const objectUrl = URL.createObjectURL(normalized);
     setLocalPreviewUrl(objectUrl);
+    setBackgroundKey(null);
+    setBackgroundUrl(null);
     try {
       const dims = await readImageSize(normalized);
       setWidth(dims.width);
       setHeight(dims.height);
     } catch {
-      // keep defaults
+      // keep current canvas size
     }
     setStatus("Uploading background…");
     setUploading(true);
     try {
       await uploadBackgroundFile(normalized);
-      setStatus("Background ready. Edit the title and details — the preview updates as you type.");
+      setStatus(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
-      setStatus(
-        "Preview ready. Fill in the student name — we'll upload the background when you download.",
-      );
+      setStatus("Preview ready. We'll upload the background when you download.");
     } finally {
       setUploading(false);
     }
+  }
+
+  async function applyStarter(starter: StarterTemplate) {
+    setSelectedStarterId(starter.id);
+    setDesignLabel(starter.name);
+    setTitle(starter.title);
+    setWidth(starter.width);
+    setHeight(starter.height);
+    setBackgroundFill(starter.backgroundColor);
+    setFields(starter.fields.map((f) => ({ ...f })));
+    setValues((prev) => mergeValues(starter.fields, prev));
+    setSelectedKey("cert_title");
+    setZoomLevel(1);
+    setView("editor");
+    try {
+      const file = await resolveStarterBackgroundFile(starter);
+      await applyBackgroundFile(file, {
+        label: `${starter.name} design`,
+        skipNormalize: file.type === "image/png",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load this design");
+    }
+  }
+
+  function onChooseStarter(starter: StarterTemplate) {
+    setSelectedStarterId(starter.id);
+    window.setTimeout(() => {
+      void applyStarter(starter);
+    }, 160);
+  }
+
+  async function onChooseOwnFile(file: File) {
+    setSelectedStarterId(null);
+    setDesignLabel(null);
+    setTitle("Custom design");
+    setBackgroundFill("#ffffff");
+    setFields(initialFields());
+    setValues((prev) => mergeValues(initialFields(), prev));
+    setSelectedKey("cert_title");
+    setZoomLevel(1);
+    setView("editor");
+    await applyBackgroundFile(file);
+  }
+
+  function onChooseSaved(template: Template) {
+    setSelectedStarterId(null);
+    setDesignLabel(template.title);
+    setTitle(template.title);
+    setWidth(template.width);
+    setHeight(template.height);
+    setFields(template.fields_config.map((f) => ({ ...f })));
+    setValues((prev) => mergeValues(template.fields_config, prev));
+    setBackgroundKey(template.background_r2_key);
+    setBackgroundUrl(template.background_url);
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    setLocalPreviewUrl(null);
+    bgFileRef.current = null;
+    setBgFileName(template.title);
+    setBackgroundFill("#ffffff");
+    setSelectedKey("cert_title");
+    setZoomLevel(1);
+    setView("editor");
+    setStatus(null);
+    setError(null);
   }
 
   async function onLogoUpload(file: File | null) {
@@ -250,7 +325,7 @@ export function BuilderPage() {
     try {
       const res = await api.uploadLogo(normalized);
       const existing = fields.find((f) => f.key === "logo");
-      const logoField: FieldConfig = {
+      const nextLogo: FieldConfig = {
         key: "logo",
         label: "Organisation logo",
         type: "image",
@@ -263,9 +338,9 @@ export function BuilderPage() {
       };
       setFields((prev) => {
         if (prev.some((f) => f.key === "logo")) {
-          return prev.map((f) => (f.key === "logo" ? { ...f, ...logoField } : f));
+          return prev.map((f) => (f.key === "logo" ? { ...f, ...nextLogo } : f));
         }
-        return [logoField, ...prev];
+        return [nextLogo, ...prev];
       });
       setImageUrls((prev) => {
         const old = prev.logo;
@@ -295,20 +370,6 @@ export function BuilderPage() {
     if (selectedKey === "logo") setSelectedKey("cert_title");
   }
 
-  function openBackgroundPicker() {
-    fileInputRef.current?.click();
-  }
-
-  function onTitleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    if (!hasBackground) {
-      openBackgroundPicker();
-      return;
-    }
-    document.getElementById("val-cert_title")?.focus();
-  }
-
   function addCustomField() {
     const label = customLabel.trim();
     if (!label) return;
@@ -318,7 +379,6 @@ export function BuilderPage() {
       return;
     }
     const next = defaultField(key, label, fields.filter(isTextField).length);
-    next.fontColor = globalColor;
     setFields((prev) => [...prev, next]);
     setValues((prev) => ({ ...prev, [key]: "" }));
     setSelectedKey(key);
@@ -365,8 +425,8 @@ export function BuilderPage() {
 
   async function createOneCertificate() {
     if (!hasBackground) {
-      setError("Choose a background image first");
-      openBackgroundPicker();
+      setError("Choose a design or upload a background first");
+      setView("chooser");
       return;
     }
     if (!studentName) {
@@ -376,6 +436,7 @@ export function BuilderPage() {
       return;
     }
     setGenerating(true);
+    setDownloadDone(false);
     setError(null);
     setStatus("Saving layout and rendering certificate…");
     try {
@@ -400,6 +461,8 @@ export function BuilderPage() {
         elapsed_ms: zip.elapsed_ms,
       });
       setStatus(`Download started: ${zip.filename}. We do not keep a copy on our servers.`);
+      setDownloadDone(true);
+      window.setTimeout(() => setDownloadDone(false), 1600);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
       setStatus(null);
@@ -410,8 +473,8 @@ export function BuilderPage() {
 
   async function goBulkCsv() {
     if (!hasBackground) {
-      setError("Choose a background image first");
-      openBackgroundPicker();
+      setError("Choose a design or upload a background first");
+      setView("chooser");
       return;
     }
     setSaving(true);
@@ -428,246 +491,210 @@ export function BuilderPage() {
     }
   }
 
-  return (
-    <section className="panel designer-panel">
-      <h2>Design a certificate</h2>
-      <p className="lede">
-        Upload a background, set the certificate title and logo, place the text, and
-        type sample details to preview. When it looks right, download one certificate
-        or make many from a CSV list.
-      </p>
+  const readyLabel = !hasBackground
+    ? "Choose a design or upload a background to get started."
+    : !studentName
+      ? "Add a student name to finish this certificate."
+      : uploading
+        ? "Uploading…"
+        : downloadDone
+          ? "Your certificate downloaded."
+          : "Your certificate is ready.";
 
-      <div className="designer-setup">
-        <div className="field">
-          <label htmlFor="title">Name of this design</label>
-          <input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={onTitleKeyDown}
-            placeholder="e.g. Linux in AI Systems"
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="bg">Background image (max 10MB)</label>
-          <div className="file-picker">
-            <input
-              id="bg"
-              ref={fileInputRef}
-              className="file-input-hidden"
-              type="file"
-              accept="image/*"
-              onChange={(e) => void onUpload(e.target.files?.[0] ?? null)}
-            />
-            <button type="button" className="btn btn-secondary" onClick={openBackgroundPicker}>
-              {bgFileName ? "Change image" : "Choose image"}
-            </button>
-            <span className="file-picker-name" title={bgFileName ?? undefined}>
-              {bgFileName ?? "No file chosen"}
-            </span>
-          </div>
-        </div>
-        <div className="field">
-          <label htmlFor="logo">Organisation logo (optional)</label>
-          <div className="file-picker">
-            <input
-              id="logo"
-              ref={logoInputRef}
-              className="file-input-hidden"
-              type="file"
-              accept="image/*"
-              onChange={(e) => void onLogoUpload(e.target.files?.[0] ?? null)}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => logoInputRef.current?.click()}
-            >
-              {hasLogo ? "Change logo" : "Add logo"}
-            </button>
-            {hasLogo && (
-              <button type="button" className="linkish" onClick={removeLogo}>
-                Remove
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+  const downloadLabel = generating
+    ? "Preparing certificate…"
+    : downloadDone
+      ? "Downloaded ✓"
+      : "Download certificate";
 
-      <div className="preview-label">
-        Preview
-        {!fontsLoaded ? <span className="optional-tag">Loading fonts…</span> : null}
-      </div>
-      <CanvasEditor
-        width={width}
-        height={height}
-        backgroundUrl={previewUrl}
-        fields={fields}
-        values={values}
-        imageUrls={imageUrls}
-        selectedKey={selectedKey}
-        onSelect={setSelectedKey}
-        onChangeField={updateField}
+  if (view === "chooser") {
+    return (
+      <TemplateChooser
+        selectedId={selectedStarterId}
+        onChooseStarter={onChooseStarter}
+        onChooseOwnFile={(file) => void onChooseOwnFile(file)}
+        onChooseSaved={onChooseSaved}
       />
-      <p className="muted preview-hint">
-        Drag text and the logo on the preview to place them. Resize the logo with the
-        corner handles. Optional fields (like Certificate ID) only print if you fill them in.
-      </p>
+    );
+  }
 
-      <div className="designer-controls">
-        <div className="designer-toolbar" role="group" aria-label="Text for all fields">
-          <span className="toolbar-label">All text</span>
-          <label className="toolbar-control" htmlFor="globalColor">
-            <span>Colour</span>
-            <input
-              id="globalColor"
-              type="color"
-              value={globalColor}
-              onChange={(e) => applyGlobalColor(e.target.value)}
-            />
-          </label>
-          <div className="toolbar-divider" aria-hidden="true" />
-          <div className="toolbar-control toolbar-sizes">
-            <span>Size</span>
-            <button
-              type="button"
-              className="btn-quiet"
-              onClick={() => bumpAllSizes(-8)}
-              aria-label="Make all text smaller"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="btn-quiet"
-              onClick={() => bumpAllSizes(8)}
-              aria-label="Make all text larger"
-            >
-              +
-            </button>
-          </div>
-        </div>
+  return (
+    <div className="editor-view">
+      <div className="editor-head">
+        <p className="editor-title">
+          Design your certificate
+          {designLabel ? ` — ${designLabel}` : ""}
+        </p>
+        <button type="button" className="change-design" onClick={() => setView("chooser")}>
+          ← Change design
+        </button>
+      </div>
 
-        <div className="field-stack">
-          {fields.filter(isTextField).map((f) => {
-            const isStandard = STANDARD_FIELDS.some((s) => s.key === f.key);
-            const markedOptional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
-            const optional =
-              Boolean(markedOptional) ||
-              (!f.static && f.key !== "student_name");
-            const required = f.key === "student_name";
-            const active = selectedKey === f.key;
-            const placeholder = (() => {
-              if (f.key === "cert_title") return "e.g. Certificate of Achievement";
-              if (f.key === "cert_id") {
-                return "Leave blank to skip — not printed if empty";
-              }
-              if (f.key === "issue_date") {
-                return "e.g. 11 Aug 2026 — leave blank to skip";
-              }
-              if (optional) {
-                return `Optional — leave blank to hide on certificate`;
-              }
-              return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
-            })();
-            return (
-              <div
-                key={f.key}
-                className={`field-row ${active ? "is-active" : ""}`}
-                onClick={() => setSelectedKey(f.key)}
+      <div className="workspace">
+        <div className="controls">
+          <div className="field-group">
+            <p className="group-label">Background</p>
+            <div className="bg-row">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => fileInputRef.current?.click()}
               >
-                <div className="field-row-top">
-                  <label htmlFor={`val-${f.key}`}>
-                    {fieldLabel(f.key, f.label)}
-                    {f.static ? (
-                      <span className="optional-tag">On every cert</span>
-                    ) : required ? (
-                      <span className="optional-tag">Required</span>
-                    ) : optional ? (
-                      <span className="optional-tag">Not required</span>
-                    ) : null}
-                  </label>
-                  {!isStandard && (
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFields((prev) => prev.filter((x) => x.key !== f.key));
-                        setValues((prev) => {
-                          const next = { ...prev };
-                          delete next[f.key];
-                          return next;
-                        });
-                        setSelectedKey(null);
-                      }}
-                    >
-                      Remove
-                    </button>
+                Change background
+              </button>
+              <span className="bg-file-name">{bgFileName ?? "Using selected design"}</span>
+              <input
+                ref={fileInputRef}
+                className="file-input-hidden"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void applyBackgroundFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="field-group">
+            <p className="group-label">Logo</p>
+            <div className="logo-row">
+              <div className="logo-placeholder">
+                {imageUrls.logo ? <img src={imageUrls.logo} alt="" /> : "＋"}
+              </div>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => logoInputRef.current?.click()}
+              >
+                {hasLogo ? "Change logo" : "Add logo"}
+              </button>
+              <input
+                ref={logoInputRef}
+                className="file-input-hidden"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  void onLogoUpload(e.target.files?.[0] ?? null);
+                  e.target.value = "";
+                }}
+              />
+              {hasLogo ? (
+                <button type="button" className="btn-text" onClick={removeLogo}>
+                  Remove
+                </button>
+              ) : (
+                <span className="help-inline">Optional</span>
+              )}
+            </div>
+          </div>
+
+          <div className="field-group">
+            <p className="group-label">Certificate fields</p>
+
+            {fields.filter(isTextField).map((f) => {
+              const isStandard = STANDARD_FIELDS.some((s) => s.key === f.key);
+              const markedOptional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
+              const optional =
+                Boolean(markedOptional) || (!f.static && f.key !== "student_name");
+              const required = f.key === "student_name";
+              const active = selectedKey === f.key;
+              const placeholder = (() => {
+                if (f.key === "cert_title") return "e.g. Certificate of Achievement";
+                if (f.key === "cert_id") return "e.g. CERT-2026-001";
+                if (f.key === "issue_date") return "e.g. 11 Aug 2026";
+                if (optional) return `Optional — leave blank to hide`;
+                return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
+              })();
+
+              return (
+                <div
+                  key={f.key}
+                  className={`field-row${active ? " selected" : ""}`}
+                  onClick={() => setSelectedKey(f.key)}
+                >
+                  <div className="field-row-head">
+                    <span className="field-name">{fieldLabel(f.key, f.label)}</span>
+                    <span className="field-tag">
+                      {f.static
+                        ? "On every certificate"
+                        : required
+                          ? "Required"
+                          : "Optional"}
+                    </span>
+                    {!isStandard && (
+                      <button
+                        type="button"
+                        className="btn-text"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFields((prev) => prev.filter((x) => x.key !== f.key));
+                          setValues((prev) => {
+                            const next = { ...prev };
+                            delete next[f.key];
+                            return next;
+                          });
+                          setSelectedKey(null);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id={`val-${f.key}`}
+                    className="field-input"
+                    placeholder={placeholder}
+                    value={values[f.key] || ""}
+                    onChange={(e) => updateValue(f.key, e.target.value)}
+                    onFocus={() => setSelectedKey(f.key)}
+                    style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
+                  />
+                  {optional && !(values[f.key] || "").trim() && (
+                    <p className="field-help">Left blank, it won&apos;t appear on the certificate.</p>
                   )}
-                </div>
-                <input
-                  id={`val-${f.key}`}
-                  placeholder={placeholder}
-                  value={values[f.key] || ""}
-                  onChange={(e) => updateValue(f.key, e.target.value)}
-                  onFocus={() => setSelectedKey(f.key)}
-                  style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
-                />
-                {optional && !(values[f.key] || "").trim() && (
-                  <p className="field-optional-hint">
-                    Not mandatory — if you leave this blank, it will not appear on the
-                    certificate.
-                  </p>
-                )}
-                {active && (
-                  <div className="field-row-style" onClick={(e) => e.stopPropagation()}>
-                    <label className="style-chip style-chip-grow">
-                      <span>Font</span>
+                  <div className="mini-typography" onClick={(e) => e.stopPropagation()}>
+                    <div>
+                      <label htmlFor={`font-${f.key}`}>Font</label>
                       <select
+                        id={`font-${f.key}`}
                         value={f.fontFamily || DEFAULT_FONT_FAMILY}
-                        onChange={(e) =>
-                          updateField(f.key, { fontFamily: e.target.value })
-                        }
+                        onChange={(e) => updateField(f.key, { fontFamily: e.target.value })}
                       >
                         {CERT_FONTS.map((font) => (
-                          <option
-                            key={font.id}
-                            value={font.family}
-                            style={{ fontFamily: font.family }}
-                          >
+                          <option key={font.id} value={font.family}>
                             {font.label}
                           </option>
                         ))}
                       </select>
-                    </label>
-                    <label className="style-chip">
-                      <span>Size</span>
+                    </div>
+                    <div>
+                      <label htmlFor={`size-${f.key}`}>Size</label>
                       <input
+                        id={`size-${f.key}`}
                         type="number"
-                        min={18}
+                        min={14}
                         max={140}
                         value={f.fontSize ?? 40}
                         onChange={(e) =>
-                          updateField(f.key, {
-                            fontSize: Number(e.target.value) || 18,
-                          })
+                          updateField(f.key, { fontSize: Number(e.target.value) || 18 })
                         }
                       />
-                    </label>
-                    <label className="style-chip">
-                      <span>Colour</span>
+                    </div>
+                    <div>
+                      <label htmlFor={`color-${f.key}`}>Colour</label>
                       <input
+                        id={`color-${f.key}`}
                         type="color"
-                        value={f.fontColor || "#0b0b0b"}
-                        onChange={(e) =>
-                          updateField(f.key, { fontColor: e.target.value })
-                        }
+                        value={f.fontColor || "#171717"}
+                        onChange={(e) => updateField(f.key, { fontColor: e.target.value })}
                       />
-                    </label>
-                    <label className="style-chip style-chip-grow">
-                      <span>Align</span>
+                    </div>
+                    <div>
+                      <label htmlFor={`align-${f.key}`}>Align</label>
                       <select
+                        id={`align-${f.key}`}
                         value={f.textAlign || "center"}
                         onChange={(e) =>
                           updateField(f.key, {
@@ -675,80 +702,112 @@ export function BuilderPage() {
                           })
                         }
                       >
-                        <option value="left">Left</option>
                         <option value="center">Center</option>
+                        <option value="left">Left</option>
                         <option value="right">Right</option>
                       </select>
-                    </label>
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
 
-        <div className="field-add-bar">
-          <input
-            id="customLabel"
-            placeholder="Add another field, e.g. Course name"
-            value={customLabel}
-            onChange={(e) => setCustomLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") addCustomField();
-            }}
-            aria-label="New field name"
-          />
-          <button type="button" className="btn btn-secondary" onClick={addCustomField}>
-            Add field
-          </button>
-        </div>
-
-        <div className="designer-footer">
-          <div>
-            <h3 className="side-title">Ready to create?</h3>
-            <p className="muted">
-              {!hasBackground
-                ? "Choose a background image to get started."
-                : !studentName
-                  ? "Enter the student name. Other fields are optional."
-                  : uploading
-                    ? "Uploading…"
-                    : "Download one certificate now, or save this design for a CSV batch."}
-            </p>
+            <div className="add-field-row">
+              <input
+                placeholder="Add another field, e.g. Course name"
+                value={customLabel}
+                onChange={(e) => setCustomLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addCustomField();
+                }}
+                aria-label="New field name"
+              />
+              <button type="button" className="btn" onClick={addCustomField}>
+                Add field
+              </button>
+            </div>
           </div>
-          <div className="issue-actions-row">
+        </div>
+
+        <div className="canvas-pane">
+          <div className="zoom-bar">
             <button
               type="button"
-              className="btn btn-primary"
-              disabled={generating || uploading}
+              onClick={() => setZoomLevel((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <span className="zoom-pct">{Math.round(zoomLevel * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => setZoomLevel((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))}
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+            <span className="zoom-sep">|</span>
+            <button type="button" className="zoom-fit" onClick={() => setZoomLevel(1)}>
+              Fit
+            </button>
+            {!fontsLoaded && <span className="help-inline">Loading fonts…</span>}
+          </div>
+          <div className="cert-stage">
+            <CanvasEditor
+              width={width}
+              height={height}
+              backgroundUrl={previewUrl}
+              backgroundFill={backgroundFill}
+              fields={fields}
+              values={values}
+              imageUrls={imageUrls}
+              selectedKey={selectedKey}
+              onSelect={setSelectedKey}
+              onChangeField={updateField}
+              zoom={zoomLevel}
+            />
+          </div>
+        </div>
+
+        <div className="action-bar">
+          <div className="ready-row">
+            <span className={`ready-label${ready && !downloadDone ? "" : " not-ready"}`}>
+              {readyLabel}
+            </span>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!ready || generating}
               onClick={() => void createOneCertificate()}
             >
-              {generating ? "Creating…" : "Download certificate"}
+              {downloadLabel}
             </button>
+          </div>
+          <div className="bulk-hint">
+            <p>
+              Need to create certificates for a whole class?
+              <br />
+              <strong>Upload a CSV and create them all at once.</strong>
+            </p>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn-text"
               disabled={saving || uploading}
               onClick={() => void goBulkCsv()}
             >
-              {saving ? "Saving…" : "Make many from a list"}
+              {saving ? "Saving…" : "Make many from CSV →"}
             </button>
           </div>
+          {status && <div className="status">{status}</div>}
+          {error && <div className="status error">{error}</div>}
+          {result && (
+            <p className="muted" style={{ margin: "12px 0 0" }}>
+              {result.filename} · {result.count} certificate
+              {result.count === 1 ? "" : "s"}
+            </p>
+          )}
         </div>
       </div>
-
-      {status && <div className="status">{status}</div>}
-      {error && <div className="status error">{error}</div>}
-
-      {result && (
-        <div className="result-card">
-          <h3>Download ready</h3>
-          <p className="muted">
-            Your certificate zip ({result.filename}) should have downloaded. Files are
-            not stored on our servers after generation.
-          </p>
-        </div>
-      )}
-    </section>
+    </div>
   );
 }

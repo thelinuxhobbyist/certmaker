@@ -59,6 +59,8 @@ interface CanvasEditorProps {
   width: number;
   height: number;
   backgroundUrl: string | null;
+  /** Solid fill while a starter has no uploaded/painted image yet. */
+  backgroundFill?: string;
   fields: FieldConfig[];
   values: Record<string, string>;
   /** Local/object URLs for image fields keyed by field.key */
@@ -66,6 +68,8 @@ interface CanvasEditorProps {
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
   onChangeField: (key: string, patch: Partial<FieldConfig>) => void;
+  /** Multiplier on top of fit-to-pane scale. */
+  zoom?: number;
 }
 
 function LogoNode({
@@ -135,8 +139,8 @@ function LogoNode({
           ref={trRef}
           rotateEnabled={false}
           enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
-          borderStroke="#d97757"
-          anchorStroke="#d97757"
+          borderStroke="#c96f4a"
+          anchorStroke="#c96f4a"
           anchorFill="#fff"
           anchorSize={Math.max(8, 10 / scale)}
           boundBoxFunc={(oldBox, newBox) => {
@@ -151,10 +155,10 @@ function LogoNode({
           y={field.y}
           width={w}
           height={h}
-          stroke="#d97757"
+          stroke="#c96f4a"
           dash={[6, 4]}
           strokeWidth={Math.max(1.5, 2 / scale)}
-          fill="rgba(217, 119, 87, 0.08)"
+          fill="rgba(201, 111, 74, 0.08)"
           listening={false}
         />
       )}
@@ -166,16 +170,18 @@ export function CanvasEditor({
   width,
   height,
   backgroundUrl,
+  backgroundFill = "#ffffff",
   fields,
   values,
   imageUrls = {},
   selectedKey,
   onSelect,
   onChangeField,
+  zoom = 1,
 }: CanvasEditorProps) {
   const { image, failed } = useHtmlImage(backgroundUrl);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -183,7 +189,7 @@ export function CanvasEditor({
 
     const update = () => {
       const available = Math.max(200, el.clientWidth - 8);
-      setScale(Math.min(1, available / width));
+      setFitScale(Math.min(1, available / width));
     };
 
     update();
@@ -191,6 +197,8 @@ export function CanvasEditor({
     observer.observe(el);
     return () => observer.disconnect();
   }, [width, height]);
+
+  const scale = Math.max(0.2, fitScale * zoom);
 
   const stageWidth = Math.max(1, Math.round(width * scale));
   const stageHeight = Math.max(1, Math.round(height * scale));
@@ -214,7 +222,7 @@ export function CanvasEditor({
             {image ? (
               <KonvaImage image={image} x={0} y={0} width={width} height={height} />
             ) : (
-              <Rect x={0} y={0} width={width} height={height} fill="#fbfbf7" />
+              <Rect x={0} y={0} width={width} height={height} fill={backgroundFill} />
             )}
 
             {fields.map((field) => {
@@ -288,10 +296,10 @@ export function CanvasEditor({
                       y={-8}
                       width={textWidth + 20}
                       height={fontSize + 22}
-                      stroke="#d97757"
+                      stroke="#c96f4a"
                       strokeWidth={Math.max(2, 2 / scale)}
                       cornerRadius={6}
-                      fill="rgba(217, 119, 87, 0.08)"
+                      fill="rgba(201, 111, 74, 0.08)"
                     />
                   )}
                   {showAsPlaceholder && (
