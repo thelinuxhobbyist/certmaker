@@ -1,5 +1,7 @@
 import { isImageField, isTextField, type FieldConfig } from "./api";
 
+export const STUDENT_LAST_KEY = "student_name_last";
+
 function norm(value: string): string {
   return value
     .toLowerCase()
@@ -57,6 +59,26 @@ const ALIASES: Record<string, string[]> = {
   modules: ["modules", "module", "units"],
 };
 
+const FIRST_NAME_ALIASES = [
+  "first_name",
+  "firstname",
+  "first",
+  "given_name",
+  "givenname",
+  "given",
+  "forename",
+];
+
+const LAST_NAME_ALIASES = [
+  "last_name",
+  "lastname",
+  "last",
+  "surname",
+  "family_name",
+  "familyname",
+  "family",
+];
+
 function aliasesForField(field: FieldConfig): string[] {
   const key = norm(field.key);
   const label = field.label ? norm(field.label) : "";
@@ -64,13 +86,12 @@ function aliasesForField(field: FieldConfig): string[] {
   const extras: string[] = [key];
   if (label) extras.push(label);
 
-  // Fuzzy: if key contains "course" and "name"/"title"
   if (key.includes("course") && (key.includes("name") || key.includes("title"))) {
     extras.push(...ALIASES.course_name);
   } else if (key.includes("course")) {
     extras.push(...ALIASES.course_id, ...ALIASES.course_name);
   }
-  if (key.includes("name") && !key.includes("course")) {
+  if (key.includes("name") && !key.includes("course") && key !== "first_name" && key !== "last_name") {
     extras.push(...ALIASES.student_name);
   }
   if (key.includes("date")) extras.push(...ALIASES.issue_date);
@@ -80,19 +101,39 @@ function aliasesForField(field: FieldConfig): string[] {
   return [...new Set([...known, ...extras])];
 }
 
+function headerMatchesAlias(header: string, aliases: string[]): boolean {
+  const h = norm(header);
+  return aliases.some((a) => h === a);
+}
+
+export function isFirstNameHeader(header: string): boolean {
+  return headerMatchesAlias(header, FIRST_NAME_ALIASES);
+}
+
+export function isLastNameHeader(header: string): boolean {
+  return headerMatchesAlias(header, LAST_NAME_ALIASES);
+}
+
+function findHeader(headers: string[], aliases: string[]): string {
+  return headers.find((h) => headerMatchesAlias(h, aliases)) || "";
+}
+
 function scoreHeader(header: string, field: FieldConfig): number {
   const h = norm(header);
+  if (field.key === "student_name" && (isFirstNameHeader(header) || isLastNameHeader(header))) {
+    return 0;
+  }
   const aliases = aliasesForField(field);
   if (aliases.includes(h)) return 100;
-  if (aliases.some((a) => h === a || h.includes(a) || a.includes(h))) return 70;
+  if (aliases.some((a) => a.length >= 4 && (h === a || h.includes(a) || a.includes(h)))) return 70;
   const label = field.label ? norm(field.label) : "";
-  if (label && (h.includes(label) || label.includes(h))) return 60;
+  if (label && label.length >= 4 && (h.includes(label) || label.includes(h))) return 60;
   return 0;
 }
 
 /**
  * Map spreadsheet columns to certificate fields.
- * Works with name-only files, or name + course + id, etc.
+ * Works with name-only files, first+last name columns, or name + course + id.
  * Static title/logo fields are not mapped from CSV.
  */
 export function autoMapColumns(
@@ -116,6 +157,9 @@ export function autoMapColumns(
     }
     return mapping;
   }
+
+  const firstCol = findHeader(cleanHeaders, FIRST_NAME_ALIASES);
+  const lastCol = findHeader(cleanHeaders, LAST_NAME_ALIASES);
 
   // Best match per field, no double-use of the same column
   const ranked = mappable
@@ -142,8 +186,23 @@ export function autoMapColumns(
     }
   }
 
-  // If student_name still empty, use first unused column
-  if (!mapping.student_name) {
+  const hasFullName =
+    Boolean(mapping.student_name) &&
+    !isFirstNameHeader(mapping.student_name) &&
+    !isLastNameHeader(mapping.student_name);
+
+  if (firstCol && lastCol && !hasFullName) {
+    mapping.student_name = firstCol;
+    mapping[STUDENT_LAST_KEY] = lastCol;
+    used.add(firstCol);
+    used.add(lastCol);
+  } else if (!mapping.student_name && firstCol) {
+    mapping.student_name = firstCol;
+    used.add(firstCol);
+  } else if (!mapping.student_name && lastCol) {
+    mapping.student_name = lastCol;
+    used.add(lastCol);
+  } else if (!mapping.student_name) {
     const leftover = cleanHeaders.find((h) => !used.has(h));
     if (leftover) {
       mapping.student_name = leftover;
@@ -152,6 +211,20 @@ export function autoMapColumns(
   }
 
   return mapping;
+}
+
+export function combineStudentName(
+  row: Record<string, string>,
+  mapping: Record<string, string>,
+): string {
+  const firstHeader = mapping.student_name;
+  const lastHeader = mapping[STUDENT_LAST_KEY];
+  const first = (firstHeader ? row[firstHeader] : "")?.trim() || "";
+  const last =
+    lastHeader && lastHeader !== firstHeader
+      ? (row[lastHeader] || "").trim()
+      : "";
+  return [first, last].filter(Boolean).join(" ");
 }
 
 export function unusedHeaders(

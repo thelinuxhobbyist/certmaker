@@ -1,10 +1,13 @@
-import { Link, NavLink, Route, Routes } from "react-router-dom";
-import { HomePage } from "./pages/HomePage";
+import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { BuilderPage } from "./pages/BuilderPage";
 import { BatchPage } from "./pages/BatchPage";
 import { VerifyPage } from "./pages/VerifyPage";
 
 export function App() {
+  const location = useLocation();
+  const designActive =
+    location.pathname === "/" || location.pathname.startsWith("/builder");
+
   return (
     <div className="app-shell">
       <header className="topnav">
@@ -12,7 +15,7 @@ export function App() {
           The Cert Maker
         </Link>
         <nav className="nav-links" aria-label="Main">
-          <NavLink to="/builder" className={({ isActive }) => (isActive ? "active" : "")}>
+          <NavLink to="/" className={() => (designActive ? "active" : "")} end>
             Design
           </NavLink>
           <NavLink to="/batch" className={({ isActive }) => (isActive ? "active" : "")}>
@@ -23,7 +26,7 @@ export function App() {
 
       <main className="app-main">
         <Routes>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<BuilderPage />} />
           <Route path="/builder" element={<BuilderPage />} />
           <Route path="/batch" element={<BatchPage />} />
           <Route path="/batch/:templateId" element={<BatchPage />} />
@@ -32,16 +35,7 @@ export function App() {
       </main>
 
       <footer className="site-footer">
-        <div className="footer-inner">
-          <Link to="/" className="footer-brand">
-            The Cert Maker
-          </Link>
-          <nav className="footer-links" aria-label="Footer">
-            <Link to="/builder">Design a certificate</Link>
-            <Link to="/batch">Make many from a list</Link>
-          </nav>
-          <p className="footer-note">Design once, make hundreds.</p>
-        </div>
+        The Cert Maker — design once, make hundreds.
       </footer>
     </div>
   );

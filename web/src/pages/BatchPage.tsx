@@ -3,7 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
-import { autoMapColumns, unusedHeaders } from "../lib/csvMap";
+import {
+  STUDENT_LAST_KEY,
+  autoMapColumns,
+  combineStudentName,
+  unusedHeaders,
+} from "../lib/csvMap";
 import {
   dateHelpText,
   loadDateOrder,
@@ -147,7 +152,7 @@ export function BatchPage() {
           custom_data[fieldKey] = value;
         }
         return {
-          student_name: (row[mapping.student_name] || "").trim(),
+          student_name: combineStudentName(row, mapping),
           custom_data,
         };
       })
@@ -291,7 +296,7 @@ export function BatchPage() {
                 <label htmlFor={`map-${field.key}`}>
                   {niceLabel(field)}
                   {field.key === "student_name" ? (
-                    <span className="optional-tag"> required</span>
+                    <span className="optional-tag"> first or full name</span>
                   ) : (
                     <span className="optional-tag"> skip if missing</span>
                   )}
@@ -312,6 +317,31 @@ export function BatchPage() {
                     </option>
                   ))}
                 </select>
+                {field.key === "student_name" && (
+                  <>
+                    <label htmlFor="map-student_name_last" style={{ marginTop: "0.65rem" }}>
+                      Last name
+                      <span className="optional-tag"> optional — joined with a space</span>
+                    </label>
+                    <select
+                      id="map-student_name_last"
+                      value={mapping[STUDENT_LAST_KEY] || ""}
+                      onChange={(e) =>
+                        setMapping((prev) => ({
+                          ...prev,
+                          [STUDENT_LAST_KEY]: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Skip — full name is in one column</option>
+                      {headers.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -351,9 +381,12 @@ export function BatchPage() {
               <ul>
                 {previewRows.map((row, i) => (
                   <li key={i}>
-                    {(row[mapping.student_name] || "").trim() || "(empty name)"}
+                    {combineStudentName(row, mapping) || "(empty name)"}
                     {Object.entries(mapping)
-                      .filter(([k, h]) => k !== "student_name" && h && row[h])
+                      .filter(
+                        ([k, h]) =>
+                          k !== "student_name" && k !== STUDENT_LAST_KEY && h && row[h],
+                      )
                       .map(([, h]) => ` · ${row[h]}`)
                       .join("")}
                   </li>
