@@ -1113,8 +1113,16 @@ textarea {
   font-weight: 600;
 }
 
-.bulk-hint .btn-text {
+.bulk-hint .btn-text,
+.bulk-hint .btn {
   white-space: nowrap;
+}
+
+.bulk-hint.is-emphasis {
+  background: var(--accent-wash);
+  margin: 14px -28px -20px;
+  padding: 16px 28px 20px;
+  border-top: 1px solid #f0d8cc;
 }
 
 /* ---------- Shared panels (batch / verify) ---------- */

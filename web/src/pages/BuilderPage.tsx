@@ -860,19 +860,29 @@ export function BuilderPage() {
               {downloadLabel}
             </button>
           </div>
-          <div className="bulk-hint">
+          <div className={`bulk-hint${downloadDone || result ? " is-emphasis" : ""}`}>
             <p>
-              Need to create certificates for a whole class?
-              <br />
-              <strong>Upload a CSV and create them all at once.</strong>
+              {downloadDone || result ? (
+                <>
+                  Like this design?
+                  <br />
+                  <strong>Use it to create more from a CSV list.</strong>
+                </>
+              ) : (
+                <>
+                  Like this design? You can use it again for a whole class.
+                  <br />
+                  <strong>Make many from a CSV — we&apos;ll keep this layout.</strong>
+                </>
+              )}
             </p>
             <button
               type="button"
-              className="btn-text"
-              disabled={saving || uploading}
+              className={downloadDone || result ? "btn primary" : "btn-text"}
+              disabled={saving || uploading || !hasBackground}
               onClick={() => void goBulkCsv()}
             >
-              {saving ? "Saving…" : "Make many from CSV →"}
+              {saving ? "Saving…" : "Use this design for many →"}
             </button>
           </div>
           {status && <div className="status">{status}</div>}

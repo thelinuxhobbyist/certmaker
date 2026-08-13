@@ -221,17 +221,32 @@ export function BatchPage() {
 
   const ready = Boolean(template && rows.length > 0 && mapping.student_name);
   const previewRows = rows.slice(0, 3);
+  const fromDesigner = Boolean(templateId && template);
 
   return (
     <section className="panel">
       <h2>Make many certificates</h2>
       <p className="lede">
-        Pick a design, upload a list of people, and we fill in the certificates.
-        A list of names alone is fine. If you also have course titles or IDs, we will use those too.
+        {fromDesigner && template ? (
+          <>
+            Using <strong>{template.title}</strong> — the design you were just working on.
+            Upload a CSV and we&apos;ll fill this layout for each person.
+          </>
+        ) : (
+          <>
+            Pick a design, upload a list of people, and we fill in the certificates.
+            A list of names alone is fine. If you also have course titles or IDs, we will use those too.
+          </>
+        )}
       </p>
 
       <div className="bulk-step">
         <h3 className="side-title">1. Choose a design</h3>
+        {fromDesigner && (
+          <p className="muted" style={{ margin: "0 0 0.65rem" }}>
+            Your current design is selected. You can pick a different one if you need to.
+          </p>
+        )}
         <div className="design-picks">
           {templates.map((t) => (
             <button
