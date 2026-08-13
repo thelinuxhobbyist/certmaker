@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
+import { DateOrderToggle } from "../components/DateOrderToggle";
 import { TemplateChooser } from "../components/TemplateChooser";
 import {
   api,
@@ -16,6 +17,15 @@ import {
   ensureCertFontsLoaded,
 } from "../lib/fonts";
 import { normalizeBackgroundImage, readImageSize } from "../lib/image";
+import {
+  dateHelpText,
+  datePlaceholder,
+  issueDateError,
+  loadDateOrder,
+  normalizeIssueDate,
+  saveDateOrder,
+  type DateOrder,
+} from "../lib/issueDate";
 import { resolveStarterBackgroundFile } from "../lib/starterBackground";
 import { STARTER_CANVAS, type StarterTemplate } from "../lib/starterTemplates";
 
@@ -144,13 +154,28 @@ export function BuilderPage() {
   const [bgFileName, setBgFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
+  const [dateTouched, setDateTouched] = useState(false);
 
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
   const studentName = (values.student_name || "").trim();
   const logoField = fields.find((f) => isImageField(f) && f.key === "logo");
   const hasLogo = Boolean(logoField?.image_r2_key);
-  const ready = hasBackground && studentName.length > 0 && !uploading;
+  const issueDateRaw = (values.issue_date || "").trim();
+  const issueDateInvalid = Boolean(issueDateError(issueDateRaw, dateOrder));
+  const ready =
+    hasBackground && studentName.length > 0 && !uploading && !issueDateInvalid;
+
+  const previewValues = useMemo(() => {
+    const next = { ...values };
+    if (!issueDateRaw) {
+      next.issue_date = "";
+      return next;
+    }
+    next.issue_date = normalizeIssueDate(issueDateRaw, dateOrder) || "";
+    return next;
+  }, [values, issueDateRaw, dateOrder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +202,12 @@ export function BuilderPage() {
     if (field?.static) {
       updateField(key, { defaultValue: value });
     }
+  }
+
+  function changeDateOrder(order: DateOrder) {
+    setDateOrder(order);
+    saveDateOrder(order);
+    if (issueDateRaw) setDateTouched(true);
   }
 
   async function uploadBackgroundFile(file: File): Promise<string> {
@@ -435,6 +466,14 @@ export function BuilderPage() {
       document.getElementById("val-student_name")?.focus();
       return;
     }
+    if (issueDateInvalid) {
+      setError(
+        issueDateError(issueDateRaw, dateOrder) || "Enter a valid issue date, or leave it blank.",
+      );
+      setSelectedKey("issue_date");
+      document.getElementById("val-issue_date")?.focus();
+      return;
+    }
     setGenerating(true);
     setDownloadDone(false);
     setError(null);
@@ -445,9 +484,12 @@ export function BuilderPage() {
       for (const field of fieldsForSave()) {
         if (!isTextField(field)) continue;
         if (field.key === "student_name") continue;
-        const value = field.static
+        let value = field.static
           ? (field.defaultValue || "").trim()
           : (values[field.key] || "").trim();
+        if (field.key === "issue_date") {
+          value = value ? normalizeIssueDate(value, dateOrder) || "" : "";
+        }
         if (value) custom_data[field.key] = value;
       }
       const zip = await api.generateSingle({
@@ -495,11 +537,13 @@ export function BuilderPage() {
     ? "Choose a design or upload a background to get started."
     : !studentName
       ? "Add a student name to finish this certificate."
-      : uploading
-        ? "Uploading…"
-        : downloadDone
-          ? "Your certificate downloaded."
-          : "Your certificate is ready.";
+      : issueDateInvalid
+        ? "Fix the issue date, or leave it blank."
+        : uploading
+          ? "Uploading…"
+          : downloadDone
+            ? "Your certificate downloaded."
+            : "Your certificate is ready.";
 
   const downloadLabel = generating
     ? "Preparing certificate…"
@@ -603,10 +647,14 @@ export function BuilderPage() {
               const placeholder = (() => {
                 if (f.key === "cert_title") return "e.g. Certificate of Achievement";
                 if (f.key === "cert_id") return "e.g. CERT-2026-001";
-                if (f.key === "issue_date") return "e.g. 11 Aug 2026";
+                if (f.key === "issue_date") return datePlaceholder(dateOrder);
                 if (optional) return `Optional — leave blank to hide`;
                 return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
               })();
+              const dateError =
+                f.key === "issue_date" && dateTouched
+                  ? issueDateError(values[f.key] || "", dateOrder)
+                  : null;
 
               return (
                 <div
@@ -649,9 +697,22 @@ export function BuilderPage() {
                     value={values[f.key] || ""}
                     onChange={(e) => updateValue(f.key, e.target.value)}
                     onFocus={() => setSelectedKey(f.key)}
+                    onBlur={() => {
+                      if (f.key === "issue_date") setDateTouched(true);
+                    }}
                     style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
                   />
-                  {optional && !(values[f.key] || "").trim() && (
+                  {f.key === "issue_date" && (
+                    <>
+                      <DateOrderToggle value={dateOrder} onChange={changeDateOrder} />
+                      {dateError ? (
+                        <p className="field-error">{dateError}</p>
+                      ) : (
+                        <p className="field-help">{dateHelpText(dateOrder)}</p>
+                      )}
+                    </>
+                  )}
+                  {f.key !== "issue_date" && optional && !(values[f.key] || "").trim() && (
                     <p className="field-help">Left blank, it won&apos;t appear on the certificate.</p>
                   )}
                   <div className="mini-typography" onClick={(e) => e.stopPropagation()}>
@@ -759,7 +820,7 @@ export function BuilderPage() {
               backgroundUrl={previewUrl}
               backgroundFill={backgroundFill}
               fields={fields}
-              values={values}
+              values={previewValues}
               imageUrls={imageUrls}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}

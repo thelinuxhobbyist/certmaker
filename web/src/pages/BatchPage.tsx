@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Papa from "papaparse";
+import { DateOrderToggle } from "../components/DateOrderToggle";
 import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
 import { autoMapColumns, unusedHeaders } from "../lib/csvMap";
+import {
+  dateHelpText,
+  loadDateOrder,
+  normalizeIssueDate,
+  saveDateOrder,
+  type DateOrder,
+} from "../lib/issueDate";
 
 function niceLabel(field: { key: string; label?: string }) {
   if (field.label) return field.label;
@@ -30,6 +38,7 @@ export function BatchPage() {
     filename: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
 
   useEffect(() => {
     setLoading(true);
@@ -129,7 +138,13 @@ export function BatchPage() {
         for (const [fieldKey, csvHeader] of Object.entries(mapping)) {
           if (!csvHeader || fieldKey === "student_name") continue;
           const value = (row[csvHeader] ?? "").trim();
-          if (value) custom_data[fieldKey] = value;
+          if (!value) continue;
+          if (fieldKey === "issue_date") {
+            const normalised = normalizeIssueDate(value, dateOrder);
+            if (normalised) custom_data[fieldKey] = normalised;
+            continue;
+          }
+          custom_data[fieldKey] = value;
         }
         return {
           student_name: (row[mapping.student_name] || "").trim(),
@@ -143,6 +158,14 @@ export function BatchPage() {
       return;
     }
 
+    const dateHeader = mapping.issue_date;
+    const invalidDates = dateHeader
+      ? rows.filter((row) => {
+          const value = (row[dateHeader] ?? "").trim();
+          return value && !normalizeIssueDate(value, dateOrder);
+        }).length
+      : 0;
+
     setBusy(true);
     setError(null);
     setStatus("Creating certificates…");
@@ -152,10 +175,13 @@ export function BatchPage() {
         rows: payloadRows,
       });
       setResults(res);
+      const dateNote = invalidDates
+        ? ` ${invalidDates} issue date${invalidDates === 1 ? " was" : "s were"} invalid and left blank — use ${dateOrder === "uk" ? "day/month/year (13/08/2026)" : "month/day/year (08/13/2026)"}.`
+        : "";
       setStatus(
         res.failed
-          ? `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"} (${res.failed} row${res.failed === 1 ? "" : "s"} failed).`
-          : `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"}. We do not keep copies on our servers.`,
+          ? `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"} (${res.failed} row${res.failed === 1 ? "" : "s"} failed).${dateNote}`
+          : `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"}. We do not keep copies on our servers.${dateNote}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -289,6 +315,24 @@ export function BatchPage() {
               </div>
             ))}
           </div>
+
+          {mapping.issue_date && (
+            <div className="date-order-block">
+              <p className="muted" style={{ marginBottom: "0.5rem" }}>
+                Issue dates in your spreadsheet
+              </p>
+              <DateOrderToggle
+                value={dateOrder}
+                onChange={(order) => {
+                  setDateOrder(order);
+                  saveDateOrder(order);
+                }}
+              />
+              <p className="muted" style={{ marginTop: "0.5rem" }}>
+                {dateHelpText(dateOrder)} Invalid dates will be left off the certificate.
+              </p>
+            </div>
+          )}
 
           {leftoverColumns.length > 0 && (
             <p className="muted" style={{ marginTop: "0.75rem" }}>

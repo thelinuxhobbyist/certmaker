@@ -823,12 +823,62 @@ textarea {
   border-bottom-color: var(--accent);
 }
 
+.field-row:has(.field-error) .field-input,
+.field-row:has(.field-error) > input {
+  border-bottom-color: #9a3d2f;
+}
+
 .field-help,
 .field-optional-hint {
   font-size: 12px;
   color: #9a968e;
   margin: 5px 0 0;
   line-height: 1.35;
+}
+
+.field-error {
+  font-size: 12px;
+  color: #9a3d2f;
+  margin: 5px 0 0;
+  line-height: 1.35;
+}
+
+.date-order-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.date-order-toggle button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.date-order-toggle button:hover {
+  border-color: #cfcabf;
+  color: var(--ink);
+}
+
+.date-order-toggle button.is-active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.date-order-block {
+  margin-top: 1rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fbfaf8;
 }
 
 .field-row.selected,
