@@ -986,6 +986,27 @@ textarea {
   margin-top: 12px;
 }
 
+.custom-field-row.is-collapsed {
+  cursor: pointer;
+  padding: 10px 0;
+}
+
+.custom-field-row.is-collapsed .field-row-head {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.field-preview-snip {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .csv-match-list {
   display: flex;
   flex-wrap: wrap;

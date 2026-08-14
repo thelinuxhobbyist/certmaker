@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
 import { DateOrderToggle } from "../components/DateOrderToggle";
@@ -314,6 +314,7 @@ export function BuilderPage() {
   const [fontsLoaded, setFontsLoaded] = useState(false);
   const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
   const [dateTouched, setDateTouched] = useState(false);
+  const pendingFocusKey = useRef<string | null>(null);
 
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
@@ -363,11 +364,18 @@ export function BuilderPage() {
 
   function selectField(key: string | null, opts?: { focus?: boolean }) {
     setSelectedKey(key);
-    if (!key || !opts?.focus) return;
-    window.requestAnimationFrame(() => {
-      document.getElementById(`val-${key}`)?.focus();
-    });
+    if (key && opts?.focus) pendingFocusKey.current = key;
   }
+
+  useLayoutEffect(() => {
+    const key = pendingFocusKey.current;
+    if (!key || key !== selectedKey) return;
+    pendingFocusKey.current = null;
+    const field = fields.find((f) => f.key === key);
+    const unlabeled = Boolean(field && isCustomTextField(field) && !(field.label || "").trim());
+    const el = document.getElementById(unlabeled ? `label-${key}` : `val-${key}`);
+    el?.focus();
+  }, [selectedKey, fields]);
 
   function changeDateOrder(order: DateOrder) {
     setDateOrder(order);
@@ -596,9 +604,7 @@ export function BuilderPage() {
     setSelectedKey(key);
     setError(null);
     setStatus("New field added on the preview — drag it into place, then name it to match your CSV column.");
-    window.requestAnimationFrame(() => {
-      document.getElementById(`label-${key}`)?.focus();
-    });
+    pendingFocusKey.current = key;
   }
 
   function removeCustomField(key: string) {
@@ -626,13 +632,18 @@ export function BuilderPage() {
   function fieldsForSave(): FieldConfig[] {
     return fields.map((f) => {
       if (!isTextField(f)) return f;
+      const label = (f.label || "").trim();
       if (f.static) {
         return {
           ...f,
+          ...(label ? { label } : {}),
           defaultValue: (values[f.key] || f.defaultValue || "").trim(),
         };
       }
-      return f;
+      return {
+        ...f,
+        ...(label ? { label } : {}),
+      };
     });
   }
 
@@ -948,14 +959,24 @@ export function BuilderPage() {
 
             {customRows.map((f) => {
               const active = selectedKey === f.key;
+              const collapsed = customRows.length > 1 && !active;
+              const preview = (values[f.key] || "").trim();
+              const name = f.label?.trim() || "New field";
               return (
                 <div
                   key={f.key}
-                  className={`field-row custom-field-row${active ? " selected" : ""}`}
-                  onClick={() => setSelectedKey(f.key)}
+                  className={`field-row custom-field-row${active ? " selected" : ""}${collapsed ? " is-collapsed" : ""}`}
+                  onClick={() => selectField(f.key, { focus: collapsed })}
                 >
                   <div className="field-row-head">
-                    <span className="field-name">{f.label?.trim() || "New field"}</span>
+                    <span className="field-name">{name}</span>
+                    {collapsed && (
+                      <span className="field-preview-snip">
+                        {preview
+                          ? preview.split("\n")[0]
+                          : "Click to edit"}
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="btn-text"
@@ -967,35 +988,39 @@ export function BuilderPage() {
                       Remove
                     </button>
                   </div>
-                  <label className="nested-label" htmlFor={`label-${f.key}`}>
-                    Field name
-                  </label>
-                  <input
-                    id={`label-${f.key}`}
-                    className="field-input"
-                    placeholder="e.g. Course"
-                    value={f.label || ""}
-                    onChange={(e) => updateField(f.key, { label: e.target.value })}
-                    onFocus={() => setSelectedKey(f.key)}
-                  />
-                  <label className="nested-label" htmlFor={`val-${f.key}`}>
-                    Preview value
-                  </label>
-                  <textarea
-                    id={`val-${f.key}`}
-                    className="field-input field-textarea"
-                    rows={2}
-                    placeholder="e.g. Computer Science"
-                    value={values[f.key] || ""}
-                    onChange={(e) => updateValue(f.key, e.target.value)}
-                    onFocus={() => setSelectedKey(f.key)}
-                    style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
-                  />
-                  <p className="field-help">
-                    Drag this on the preview to place it. Make many fills it from a CSV
-                    column named {f.label?.trim() ? `“${f.label.trim()}”` : "the same as this field"}.
-                  </p>
-                  {active ? <FieldStyleControls field={f} onChange={updateField} /> : null}
+                  {!collapsed && (
+                    <>
+                      <label className="nested-label" htmlFor={`label-${f.key}`}>
+                        Field name
+                      </label>
+                      <input
+                        id={`label-${f.key}`}
+                        className="field-input"
+                        placeholder="e.g. Course"
+                        value={f.label || ""}
+                        onChange={(e) => updateField(f.key, { label: e.target.value })}
+                        onFocus={() => setSelectedKey(f.key)}
+                      />
+                      <label className="nested-label" htmlFor={`val-${f.key}`}>
+                        Preview value
+                      </label>
+                      <textarea
+                        id={`val-${f.key}`}
+                        className="field-input field-textarea"
+                        rows={2}
+                        placeholder="e.g. Computer Science"
+                        value={values[f.key] || ""}
+                        onChange={(e) => updateValue(f.key, e.target.value)}
+                        onFocus={() => setSelectedKey(f.key)}
+                        style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
+                      />
+                      <p className="field-help">
+                        Drag this on the preview to place it. Make many fills it from a CSV
+                        column named {name === "New field" ? "the same as this field" : `“${name}”`}.
+                      </p>
+                      {active ? <FieldStyleControls field={f} onChange={updateField} /> : null}
+                    </>
+                  )}
                 </div>
               );
             })}
