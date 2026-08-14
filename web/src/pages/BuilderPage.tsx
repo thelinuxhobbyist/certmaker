@@ -27,6 +27,7 @@ import {
   type DateOrder,
 } from "../lib/issueDate";
 import { resolveStarterBackgroundFile } from "../lib/starterBackground";
+import { loadEditingTemplateId, saveEditingTemplateId } from "../lib/savedTemplates";
 import {
   STARTER_CANVAS,
   getStarterTemplate,
@@ -275,7 +276,9 @@ export function BuilderPage() {
   const appliedQuery = useRef<string | null>(null);
   const [view, setView] = useState<"chooser" | "editor">("chooser");
   const [selectedStarterId, setSelectedStarterId] = useState<string | null>(null);
-  const [savedTemplateId, setSavedTemplateId] = useState<string | null>(null);
+  const [savedTemplateId, setSavedTemplateIdState] = useState<string | null>(() =>
+    loadEditingTemplateId(),
+  );
   const returnToBatch = searchParams.get("from") === "batch";
   const [designLabel, setDesignLabel] = useState<string | null>(null);
   const [backgroundFill, setBackgroundFill] = useState("#ffffff");
@@ -312,6 +315,11 @@ export function BuilderPage() {
   const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
   const [dateTouched, setDateTouched] = useState(false);
   const pendingFocusKey = useRef<string | null>(null);
+
+  function setSavedTemplateId(id: string | null) {
+    setSavedTemplateIdState(id);
+    saveEditingTemplateId(id);
+  }
 
   function enterEditor() {
     setView("editor");

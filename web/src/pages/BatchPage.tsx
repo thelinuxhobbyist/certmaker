@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { DateOrderToggle } from "../components/DateOrderToggle";
+import { MiniCert } from "../components/MiniCert";
 import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
 import { loadBatchDraft, saveBatchDraft } from "../lib/batchDraft";
+import { savedDesignName, uniqueSavedTemplates } from "../lib/savedTemplates";
+import { STARTER_TEMPLATES } from "../lib/starterTemplates";
 import {
   STUDENT_LAST_KEY,
   combineStudentName,
@@ -79,11 +82,12 @@ export function BatchPage() {
     api
       .listTemplates()
       .then((res) => {
-        setTemplates(res.templates);
+        const unique = uniqueSavedTemplates(res.templates, templateId);
+        setTemplates(unique);
         setSelectedId((current) => {
-          if (templateId) return templateId;
-          if (current && res.templates.some((t) => t.id === current)) return current;
-          return res.templates[0]?.id || "";
+          if (templateId && unique.some((t) => t.id === templateId)) return templateId;
+          if (current && unique.some((t) => t.id === current)) return current;
+          return unique[0]?.id || "";
         });
       })
       .catch((err) =>
@@ -101,6 +105,17 @@ export function BatchPage() {
     () => unusedHeaders(headers, mapping),
     [headers, mapping],
   );
+
+  const designChoices = useMemo(() => {
+    const unique = uniqueSavedTemplates(templates, selectedId || templateId);
+    const current = unique.find((t) => t.id === selectedId) || unique[0] || null;
+    const otherSaved = unique.filter((t) => t.id !== current?.id);
+    const takenNames = new Set(unique.map((t) => t.title.trim().toLowerCase()));
+    const starters = STARTER_TEMPLATES.filter(
+      (starter) => !takenNames.has(starter.name.toLowerCase()),
+    );
+    return { current, otherSaved, starters };
+  }, [templates, selectedId, templateId]);
 
   useEffect(() => {
     if (!template || headers.length === 0) return;
@@ -136,6 +151,11 @@ export function BatchPage() {
     if (!selectedId) return;
     persistDraft();
     navigate(`/builder?tpl=${encodeURIComponent(selectedId)}&from=batch`);
+  }
+
+  function goPickStarter(starterId: string) {
+    persistDraft();
+    navigate(`/builder?tpl=${encodeURIComponent(starterId)}&from=batch`);
   }
 
   async function addLeftoverColumn(header: string) {
@@ -340,7 +360,7 @@ export function BatchPage() {
       <p className="lede">
         {fromDesigner && template ? (
           <>
-            Using <strong>{template.title}</strong> — the design you were just working on.
+            Using <strong>{savedDesignName(template)}</strong> — the design you were just working on.
             Upload a CSV and we&apos;ll fill this layout for each person.
           </>
         ) : (
@@ -353,13 +373,24 @@ export function BatchPage() {
 
       <div className="bulk-step">
         <h3 className="side-title">1. Choose a design</h3>
-        {fromDesigner && (
-          <p className="muted" style={{ margin: "0 0 0.65rem" }}>
-            Your current design is selected. You can pick a different one if you need to.
-          </p>
-        )}
+        <p className="muted" style={{ margin: "0 0 0.65rem" }}>
+          {fromDesigner
+            ? "This is the design you just made. Pick another look if you want to switch."
+            : "Pick the certificate look to fill from your spreadsheet."}
+        </p>
         <div className="design-picks">
-          {templates.map((t) => (
+          {designChoices.current && (
+            <button
+              type="button"
+              className={`design-pick is-selected`}
+              onClick={() => setSelectedId(designChoices.current!.id)}
+            >
+              <img src={designChoices.current.background_url} alt="" />
+              <span>{savedDesignName(designChoices.current)}</span>
+              <em className="design-pick-using">Using this</em>
+            </button>
+          )}
+          {designChoices.otherSaved.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -370,7 +401,18 @@ export function BatchPage() {
               }}
             >
               <img src={t.background_url} alt="" />
-              <span>{t.title}</span>
+              <span>{savedDesignName(t)}</span>
+            </button>
+          ))}
+          {designChoices.starters.map((starter) => (
+            <button
+              key={starter.id}
+              type="button"
+              className="design-pick"
+              onClick={() => goPickStarter(starter.id)}
+            >
+              <MiniCert starter={starter} />
+              <span>{starter.name}</span>
             </button>
           ))}
         </div>

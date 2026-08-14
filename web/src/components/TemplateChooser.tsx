@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Template } from "../lib/api";
+import { uniqueSavedTemplates, savedDesignName } from "../lib/savedTemplates";
 import { STARTER_TEMPLATES, type StarterTemplate } from "../lib/starterTemplates";
 import { MiniCert } from "./MiniCert";
 
@@ -23,7 +24,7 @@ export function TemplateChooser({
   useEffect(() => {
     api
       .listTemplates()
-      .then((res) => setSaved(res.templates))
+      .then((res) => setSaved(uniqueSavedTemplates(res.templates)))
       .catch(() => setSaved([]));
   }, []);
 
@@ -102,7 +103,7 @@ export function TemplateChooser({
                 onClick={() => onChooseSaved(t)}
               >
                 <img src={t.background_url} alt="" />
-                <span>{t.title}</span>
+                <span>{savedDesignName(t)}</span>
               </button>
             ))}
           </div>

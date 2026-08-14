@@ -1427,6 +1427,20 @@ h3 {
   background: var(--accent-wash);
 }
 
+.design-pick .mini-cert {
+  margin-bottom: 0;
+  aspect-ratio: 12 / 8.5;
+  border-radius: 8px;
+}
+
+.design-pick-using {
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-hover);
+  padding: 0 0.2rem 0.1rem;
+}
+
 .bulk-step {
   margin: 1.25rem 0;
 }
