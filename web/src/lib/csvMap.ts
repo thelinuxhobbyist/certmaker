@@ -275,3 +275,51 @@ export function unmatchedPersonalizedFields(
 ): FieldConfig[] {
   return fields.filter((field) => isPersonalizedField(field) && !(mapping[field.key] || "").trim());
 }
+
+/**
+ * Keep the user's column matches when a layout changes, and fill any new fields.
+ */
+export function mergeColumnMapping(
+  headers: string[],
+  fields: FieldConfig[],
+  existing: Record<string, string>,
+): Record<string, string> {
+  const auto = autoMapColumns(headers, fields);
+  const headerSet = new Set(headers);
+  const next = { ...auto };
+  for (const [key, header] of Object.entries(existing)) {
+    if (!header || !headerSet.has(header)) continue;
+    next[key] = header;
+  }
+  return next;
+}
+
+export function fieldKeyFromHeader(header: string): string {
+  return norm(header) || `custom_${header.slice(0, 8)}`;
+}
+
+export function newFieldFromHeader(header: string, existing: FieldConfig[]): FieldConfig {
+  const used = new Set(existing.map((f) => f.key));
+  const base = fieldKeyFromHeader(header);
+  let key = base;
+  let n = 2;
+  while (used.has(key)) {
+    key = `${base}_${n++}`;
+  }
+  const nameField = existing.find((f) => f.key === "student_name");
+  const extras = existing.filter(isPersonalizedField).length;
+  return {
+    key,
+    label: header.trim(),
+    type: "text",
+    x: nameField?.x ?? 600,
+    y: Math.min(760, (nameField?.y ?? 340) + 90 + extras * 52),
+    fontSize: 32,
+    fontColor: "#171717",
+    fontFamily: "Noto Sans",
+    textAlign: "center",
+    fontWeight: "normal",
+    multiline: true,
+    maxWidth: 840,
+  };
+}

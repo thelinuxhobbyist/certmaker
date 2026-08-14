@@ -272,9 +272,11 @@ export function BuilderPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const appliedQuery = useRef(false);
+  const appliedQuery = useRef<string | null>(null);
   const [view, setView] = useState<"chooser" | "editor">("chooser");
   const [selectedStarterId, setSelectedStarterId] = useState<string | null>(null);
+  const [savedTemplateId, setSavedTemplateId] = useState<string | null>(null);
+  const returnToBatch = searchParams.get("from") === "batch";
   const [designLabel, setDesignLabel] = useState<string | null>(null);
   const [backgroundFill, setBackgroundFill] = useState("#ffffff");
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -439,6 +441,7 @@ export function BuilderPage() {
   }
 
   async function applyStarter(starter: StarterTemplate) {
+    setSavedTemplateId(null);
     setSelectedStarterId(starter.id);
     setDesignLabel(starter.name);
     setTitle(starter.title);
@@ -470,16 +473,30 @@ export function BuilderPage() {
   }
 
   useEffect(() => {
-    if (appliedQuery.current) return;
     const id = searchParams.get("tpl");
     if (!id) return;
+    if (appliedQuery.current === id) return;
+    appliedQuery.current = id;
+
     const starter = getStarterTemplate(id);
-    if (!starter) return;
-    appliedQuery.current = true;
-    void applyStarter(starter);
+    if (starter) {
+      void applyStarter(starter);
+      return;
+    }
+
+    api
+      .getTemplate(id)
+      .then((tpl) => {
+        onChooseSaved(tpl);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Could not load this design");
+        setView("chooser");
+      });
   }, [searchParams]);
 
   async function onChooseOwnFile(file: File) {
+    setSavedTemplateId(null);
     setSelectedStarterId(null);
     setDesignLabel(null);
     setTitle("Custom design");
@@ -495,6 +512,7 @@ export function BuilderPage() {
 
   function onChooseSaved(template: Template) {
     setSelectedStarterId(null);
+    setSavedTemplateId(template.id);
     setDesignLabel(template.title);
     setTitle(template.title);
     setWidth(template.width);
@@ -502,6 +520,14 @@ export function BuilderPage() {
     const nextFields = ensureStandardFields(template.fields_config.map((f) => ({ ...f })));
     setFields(nextFields);
     setValues((prev) => mergeValues(nextFields, prev));
+    const logo = nextFields.find((f) => isImageField(f) && f.image_r2_key);
+    const nextImageUrls: Record<string, string | null> = {};
+    if (logo?.image_r2_key) nextImageUrls.logo = `/api/assets/${logo.image_r2_key}`;
+    setImageUrls((prev) => {
+      const old = prev.logo;
+      if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+      return nextImageUrls;
+    });
     setBackgroundKey(template.background_r2_key);
     setBackgroundUrl(template.background_url);
     if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
@@ -654,13 +680,19 @@ export function BuilderPage() {
 
   async function ensureTemplate(): Promise<string> {
     const key = await ensureBackgroundUploaded();
-    const tpl = await api.createTemplate({
+    const body = {
       title,
       background_r2_key: key,
       fields_config: fieldsForSave(),
       width,
       height,
-    });
+    };
+    if (savedTemplateId) {
+      await api.updateTemplate(savedTemplateId, body);
+      return savedTemplateId;
+    }
+    const tpl = await api.createTemplate(body);
+    setSavedTemplateId(tpl.id);
     return tpl.id;
   }
 
@@ -731,7 +763,7 @@ export function BuilderPage() {
     }
     setSaving(true);
     setError(null);
-    setStatus("Saving template for bulk CSV…");
+    setStatus(returnToBatch ? "Saving layout…" : "Saving template for bulk CSV…");
     try {
       const templateId = await ensureTemplate();
       navigate(`/batch/${templateId}`);
@@ -869,9 +901,21 @@ export function BuilderPage() {
           Design your certificate
           {designLabel ? ` — ${designLabel}` : ""}
         </p>
-        <button type="button" className="change-design" onClick={() => setView("chooser")}>
-          ← Change design
-        </button>
+        <div className="editor-head-actions">
+          {returnToBatch && (
+            <button
+              type="button"
+              className="change-design"
+              disabled={saving || uploading || !hasBackground}
+              onClick={() => void goBulkCsv()}
+            >
+              {saving ? "Saving…" : "← Save and return to Make many"}
+            </button>
+          )}
+          <button type="button" className="change-design" onClick={() => setView("chooser")}>
+            ← Change design
+          </button>
+        </div>
       </div>
 
       <div className="workspace">
@@ -1081,9 +1125,15 @@ export function BuilderPage() {
               {downloadLabel}
             </button>
           </div>
-          <div className={`bulk-hint${downloadDone || result ? " is-emphasis" : ""}`}>
+          <div className={`bulk-hint${downloadDone || result || returnToBatch ? " is-emphasis" : ""}`}>
             <p>
-              {downloadDone || result ? (
+              {returnToBatch ? (
+                <>
+                  Move text on the preview, then come back to your spreadsheet.
+                  <br />
+                  <strong>Your CSV and column matches are waiting on Make many.</strong>
+                </>
+              ) : downloadDone || result ? (
                 <>
                   Like this design?
                   <br />
@@ -1099,11 +1149,15 @@ export function BuilderPage() {
             </p>
             <button
               type="button"
-              className={downloadDone || result ? "btn primary" : "btn-text"}
+              className={downloadDone || result || returnToBatch ? "btn primary" : "btn-text"}
               disabled={saving || uploading || !hasBackground}
               onClick={() => void goBulkCsv()}
             >
-              {saving ? "Saving…" : "Use this design for many →"}
+              {saving
+                ? "Saving…"
+                : returnToBatch
+                  ? "Save and return to Make many →"
+                  : "Use this design for many →"}
             </button>
           </div>
           {status && <div className="status">{status}</div>}

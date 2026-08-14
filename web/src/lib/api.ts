@@ -129,6 +129,21 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  updateTemplate: (
+    id: string,
+    body: {
+      title: string;
+      background_r2_key: string;
+      fields_config: FieldConfig[];
+      width: number;
+      height: number;
+    },
+  ) =>
+    requestJson<Template>(`/api/templates/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   generateSingle: (body: {
     template_id: string;
     student_name: string;

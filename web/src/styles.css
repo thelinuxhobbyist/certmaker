@@ -706,6 +706,13 @@ h3 {
   margin: 0;
 }
 
+.editor-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  justify-content: flex-end;
+}
+
 .change-design {
   font-size: 13px;
   font-weight: 600;
@@ -1047,6 +1054,39 @@ h3 {
   gap: 0.5rem;
   align-items: flex-start;
   font-size: 0.875rem;
+}
+
+.csv-leftover {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.csv-leftover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.csv-leftover-add {
+  appearance: none;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.csv-leftover-add:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.csv-leftover-add:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .mini-typography label,

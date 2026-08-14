@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
+import { loadBatchDraft, saveBatchDraft } from "../lib/batchDraft";
 import {
   STUDENT_LAST_KEY,
-  autoMapColumns,
   combineStudentName,
   isPersonalizedField,
+  mergeColumnMapping,
+  newFieldFromHeader,
   unmatchedPersonalizedFields,
   unusedHeaders,
 } from "../lib/csvMap";
@@ -30,8 +32,10 @@ function niceLabel(field: { key: string; label?: string }) {
 
 export function BatchPage() {
   const { templateId } = useParams();
+  const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draftReady, setDraftReady] = useState(false);
   const [selectedId, setSelectedId] = useState(templateId || "");
   const [csvName, setCsvName] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -50,13 +54,37 @@ export function BatchPage() {
   const [allowMissingFields, setAllowMissingFields] = useState(false);
 
   useEffect(() => {
+    const draft = loadBatchDraft();
+    if (draft) {
+      if (draft.csvName) setCsvName(draft.csvName);
+      if (draft.headers.length) setHeaders(draft.headers);
+      if (draft.rows.length) {
+        setRows(draft.rows);
+        setStatus(
+          `Your spreadsheet is still here — ${draft.rows.length} ${
+            draft.rows.length === 1 ? "person" : "people"
+          }.`,
+        );
+      }
+      setMapping(draft.mapping);
+      setDateOrder(draft.dateOrder);
+      setAllowMissingFields(draft.allowMissingFields);
+      if (!templateId && draft.selectedId) setSelectedId(draft.selectedId);
+    }
+    setDraftReady(true);
+  }, [templateId]);
+
+  useEffect(() => {
     setLoading(true);
     api
       .listTemplates()
       .then((res) => {
         setTemplates(res.templates);
-        if (templateId) setSelectedId(templateId);
-        else if (res.templates[0]) setSelectedId(res.templates[0].id);
+        setSelectedId((current) => {
+          if (templateId) return templateId;
+          if (current && res.templates.some((t) => t.id === current)) return current;
+          return res.templates[0]?.id || "";
+        });
       })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Could not load your designs"),
@@ -76,15 +104,71 @@ export function BatchPage() {
 
   useEffect(() => {
     if (!template || headers.length === 0) return;
-    setMapping(autoMapColumns(headers, template.fields_config));
-    setAllowMissingFields(false);
-  }, [template?.id, headers.join("|")]);
+    setMapping((prev) => mergeColumnMapping(headers, template.fields_config, prev));
+  }, [template, headers]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    saveBatchDraft({
+      selectedId,
+      csvName,
+      headers,
+      rows,
+      mapping,
+      dateOrder,
+      allowMissingFields,
+    });
+  }, [draftReady, selectedId, csvName, headers, rows, mapping, dateOrder, allowMissingFields]);
+
+  function persistDraft() {
+    saveBatchDraft({
+      selectedId,
+      csvName,
+      headers,
+      rows,
+      mapping,
+      dateOrder,
+      allowMissingFields,
+    });
+  }
+
+  function goEditDesign() {
+    if (!selectedId) return;
+    persistDraft();
+    navigate(`/builder?tpl=${encodeURIComponent(selectedId)}&from=batch`);
+  }
+
+  async function addLeftoverColumn(header: string) {
+    if (!template) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const field = newFieldFromHeader(header, template.fields_config);
+      const updated = await api.updateTemplate(template.id, {
+        title: template.title,
+        background_r2_key: template.background_r2_key,
+        fields_config: [...template.fields_config, field],
+        width: template.width,
+        height: template.height,
+      });
+      setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      setMapping((prev) => ({ ...prev, [field.key]: header }));
+      setStatus(
+        `Added “${header}” to this design. Edit the layout to drag it into place.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that column to the design.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function onCsv(file: File | null) {
     if (!file) return;
     setError(null);
     setResults(null);
     setCsvName(file.name);
+    setMapping({});
     Papa.parse<Record<string, string>>(file, {
       header: true,
       skipEmptyLines: true,
@@ -291,9 +375,13 @@ export function BatchPage() {
           ))}
         </div>
         <p className="muted" style={{ marginTop: "0.65rem" }}>
-          Want a different look?{" "}
+          Need to move text or change the look?{" "}
+          <button type="button" className="linkish" onClick={goEditDesign} disabled={!selectedId}>
+            Edit this design
+          </button>
+          {" — "}your spreadsheet stays here.{" "}
           <Link className="linkish" to="/builder" style={{ display: "inline" }}>
-            Design a new one
+            Start a new one
           </Link>
         </p>
       </div>
@@ -442,14 +530,25 @@ export function BatchPage() {
           )}
 
           {leftoverColumns.length > 0 && (
-            <p className="muted" style={{ marginTop: "0.75rem" }}>
-              Not used from your file: {leftoverColumns.join(", ")}. To print these, add a
-              personalized field with the same name in{" "}
-              <Link className="linkish" to="/builder" style={{ display: "inline" }}>
-                Design
-              </Link>
-              .
-            </p>
+            <div className="csv-leftover">
+              <p className="muted" style={{ margin: 0 }}>
+                Not used from your file: {leftoverColumns.join(", ")}. Add a column to this
+                design to print it, then drag it into place.
+              </p>
+              <div className="csv-leftover-actions">
+                {leftoverColumns.map((header) => (
+                  <button
+                    key={header}
+                    type="button"
+                    className="csv-leftover-add"
+                    disabled={busy}
+                    onClick={() => void addLeftoverColumn(header)}
+                  >
+                    Add “{header}”
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {previewRows.length > 0 && mapping.student_name && (

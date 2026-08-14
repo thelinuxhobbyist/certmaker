@@ -5,6 +5,7 @@ import {
   createTemplate,
   getTemplate,
   listTemplates,
+  updateTemplate,
   uploadBackground,
   uploadLogo,
 } from "./routes/templates";
@@ -42,6 +43,7 @@ app.get("/api/health", (c) =>
 app.get("/api/templates", listTemplates);
 app.get("/api/templates/:id", getTemplate);
 app.post("/api/templates", createTemplate);
+app.put("/api/templates/:id", updateTemplate);
 app.post("/api/templates/upload-bg", uploadBackground);
 app.post("/api/templates/upload-logo", uploadLogo);
 

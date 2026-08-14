@@ -167,3 +167,54 @@ export async function createTemplate(c: Context<AppEnv>) {
     201,
   );
 }
+
+export async function updateTemplate(c: Context<AppEnv>) {
+  const id = c.req.param("id");
+  const existing = await c.env.DB.prepare(
+    `SELECT id, title, background_r2_key, fields_config, width, height, created_at, user_id
+     FROM templates WHERE id = ?`,
+  )
+    .bind(id)
+    .first<TemplateRecord>();
+
+  if (!existing) return c.json({ error: "Template not found" }, 404);
+
+  const body = await c.req.json<{
+    title?: string;
+    background_r2_key?: string;
+    fields_config?: FieldConfig[];
+    width?: number;
+    height?: number;
+  }>();
+
+  if (body.fields_config !== undefined && !Array.isArray(body.fields_config)) {
+    return c.json({ error: "fields_config must be an array" }, 400);
+  }
+
+  const title = body.title?.trim() || existing.title;
+  const backgroundKey = body.background_r2_key || existing.background_r2_key;
+  const fields =
+    body.fields_config !== undefined ? body.fields_config : JSON.parse(existing.fields_config);
+  const width = body.width ?? existing.width;
+  const height = body.height ?? existing.height;
+
+  await c.env.DB.prepare(
+    `UPDATE templates
+     SET title = ?, background_r2_key = ?, fields_config = ?, width = ?, height = ?
+     WHERE id = ?`,
+  )
+    .bind(title, backgroundKey, JSON.stringify(fields), width, height, id)
+    .run();
+
+  return c.json({
+    id,
+    title,
+    background_r2_key: backgroundKey,
+    fields_config: fields,
+    width,
+    height,
+    created_at: existing.created_at,
+    user_id: existing.user_id,
+    background_url: `/api/assets/${backgroundKey}`,
+  });
+}
