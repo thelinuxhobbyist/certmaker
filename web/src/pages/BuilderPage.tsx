@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { TemplateChooser } from "../components/TemplateChooser";
@@ -67,12 +67,6 @@ const STANDARD_FIELDS: Array<{
 ];
 
 const STANDARD_KEYS = new Set(STANDARD_FIELDS.map((f) => f.key));
-const PRIMARY_FIELD_KEYS = new Set([
-  "cert_title",
-  "student_name",
-  "awarded_for",
-  "issue_date",
-]);
 const DEFAULT_TEXT_WRAP = 840;
 
 function defaultFontSize(key: string): number {
@@ -276,6 +270,7 @@ function FieldStyleControls({
 
 export function BuilderPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const appliedQuery = useRef(false);
   const [view, setView] = useState<"chooser" | "editor">("chooser");
@@ -315,6 +310,16 @@ export function BuilderPage() {
   const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
   const [dateTouched, setDateTouched] = useState(false);
   const pendingFocusKey = useRef<string | null>(null);
+
+  function enterEditor() {
+    setView("editor");
+  }
+
+  useEffect(() => {
+    if ((location.state as { home?: boolean } | null)?.home) {
+      setView("chooser");
+    }
+  }, [location]);
 
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
@@ -445,7 +450,7 @@ export function BuilderPage() {
     setValues((prev) => mergeValues(nextFields, prev));
     setSelectedKey("cert_title");
     setZoomLevel(1);
-    setView("editor");
+    enterEditor();
     try {
       const file = await resolveStarterBackgroundFile(starter);
       await applyBackgroundFile(file, {
@@ -484,7 +489,7 @@ export function BuilderPage() {
     setValues((prev) => mergeValues(nextFields, prev));
     setSelectedKey("cert_title");
     setZoomLevel(1);
-    setView("editor");
+    enterEditor();
     await applyBackgroundFile(file);
   }
 
@@ -506,7 +511,7 @@ export function BuilderPage() {
     setBackgroundFill("#ffffff");
     setSelectedKey("cert_title");
     setZoomLevel(1);
-    setView("editor");
+    enterEditor();
     setStatus(null);
     setError(null);
   }
@@ -760,8 +765,6 @@ export function BuilderPage() {
   const standardRows = STANDARD_FIELDS.map((spec) => textByKey.get(spec.key)).filter(
     (f): f is FieldConfig => Boolean(f),
   );
-  const primaryRows = standardRows.filter((f) => PRIMARY_FIELD_KEYS.has(f.key));
-  const moreRows = standardRows.filter((f) => !PRIMARY_FIELD_KEYS.has(f.key));
   const customRows = fields.filter(isCustomTextField);
   const dateDisplay =
     issueDateRaw && !issueDateInvalid ? normalizeIssueDate(issueDateRaw, dateOrder) : null;
@@ -938,15 +941,7 @@ export function BuilderPage() {
               move it.
             </p>
 
-            {primaryRows.map((f) => renderStandardRow(f))}
-
-            <details
-              className="more-details"
-              {...(moreRows.some((f) => f.key === selectedKey) ? { open: true } : {})}
-            >
-              <summary>More details</summary>
-              {moreRows.map((f) => renderStandardRow(f))}
-            </details>
+            {standardRows.map((f) => renderStandardRow(f))}
           </div>
 
           <div className="field-group">

@@ -143,8 +143,8 @@ function LogoNode({
           ref={trRef}
           rotateEnabled={false}
           enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}
-          borderStroke="#c96f4a"
-          anchorStroke="#c96f4a"
+          borderStroke="#c93900"
+          anchorStroke="#c93900"
           anchorFill="#fff"
           anchorSize={Math.max(8, 10 / scale)}
           boundBoxFunc={(oldBox, newBox) => {
@@ -159,10 +159,10 @@ function LogoNode({
           y={field.y}
           width={w}
           height={h}
-          stroke="#c96f4a"
+          stroke="#c93900"
           dash={[6, 4]}
           strokeWidth={Math.max(1.5, 2 / scale)}
-          fill="rgba(201, 111, 74, 0.08)"
+          fill="rgba(201, 57, 0, 0.08)"
           listening={false}
         />
       )}
@@ -264,10 +264,10 @@ function CertTextNode({
         y={-8}
         width={box.width + 20}
         height={box.height + 16}
-        stroke={selected ? "#c96f4a" : "transparent"}
+        stroke={selected ? "#c93900" : "transparent"}
         strokeWidth={Math.max(2, 2 / scale)}
         cornerRadius={6}
-        fill={selected ? "rgba(201, 111, 74, 0.08)" : "rgba(0,0,0,0.001)"}
+        fill={selected ? "rgba(201, 57, 0, 0.08)" : "rgba(0,0,0,0.001)"}
       />
       {placeholder && (
         <Rect

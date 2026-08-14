@@ -1,16 +1,20 @@
 :root {
-  --ink: #171717;
-  --charcoal: #242424;
-  --bg: #f7f5f1;
-  --canvas-bg: #f2f0ec;
-  --surface: #ffffff;
-  --border: #e5e1da;
-  --muted: #73706b;
-  --accent: #c96f4a;
-  --accent-hover: #b95e3b;
-  --accent-wash: #fbede6;
-  --font-display: "Playfair Display", Georgia, serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  --radius: 0.25rem;
+  --ink: oklch(0.208 0.042 265.755);
+  --charcoal: oklch(0.208 0.042 265.755);
+  --bg: oklch(1 0 0);
+  --canvas-bg: oklch(0.985 0.003 247.9);
+  --surface: oklch(1 0 0);
+  --border: oklch(0.916 0.011 255.5);
+  --muted: oklch(0.478 0.031 256.8);
+  --muted-bg: oklch(0.972 0.005 247.9);
+  --accent: oklch(0.556 0.192 40.5);
+  --accent-hover: oklch(0.5 0.2 40.5);
+  --accent-wash: oklch(0.97 0.025 40.5);
+  --destructive: oklch(0.577 0.245 27.325);
+  --on-accent: oklch(1 0 0);
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-body: "Karla", ui-sans-serif, system-ui, sans-serif;
 }
 
 * {
@@ -47,8 +51,16 @@ textarea {
   color: inherit;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
 ::placeholder {
-  color: #b4b0a8;
+  color: color-mix(in oklch, var(--muted) 65%, white);
 }
 
 .app-shell {
@@ -70,7 +82,7 @@ textarea {
 
 .brand {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 19px;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -94,7 +106,7 @@ textarea {
 
 .nav-links a.active {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .nav-links a:not(.active):hover {
@@ -126,8 +138,8 @@ textarea {
 }
 
 .btn:hover:not(:disabled) {
-  border-color: #cfcabf;
-  background: #fbfaf8;
+  border-color: var(--border);
+  background: var(--muted-bg);
 }
 
 .btn:disabled {
@@ -138,7 +150,7 @@ textarea {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-primary:hover:not(:disabled),
@@ -149,9 +161,9 @@ textarea {
 
 .btn-primary:disabled,
 .btn.primary:disabled {
-  background: #e5dcd5;
-  border-color: #e5dcd5;
-  color: #b3a89e;
+  background: var(--muted-bg);
+  border-color: var(--border);
+  color: var(--muted);
 }
 
 .btn-secondary {
@@ -228,7 +240,7 @@ textarea {
 .chooser-title {
   font-family: var(--font-display);
   font-size: 34px;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
   margin: 0 0 10px;
 }
@@ -861,20 +873,20 @@ textarea {
 .field-row:has(.field-error) .field-input,
 .field-row:has(.field-error) > input,
 .field-row:has(.field-error) > textarea {
-  border-bottom-color: #9a3d2f;
+  border-bottom-color: var(--destructive);
 }
 
 .field-help,
 .field-optional-hint {
   font-size: 12px;
-  color: #9a968e;
+  color: var(--muted);
   margin: 5px 0 0;
   line-height: 1.35;
 }
 
 .field-error {
   font-size: 12px;
-  color: #9a3d2f;
+  color: var(--destructive);
   margin: 5px 0 0;
   line-height: 1.35;
 }
@@ -889,7 +901,7 @@ textarea {
 .date-order-toggle button {
   appearance: none;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
@@ -899,14 +911,14 @@ textarea {
 }
 
 .date-order-toggle button:hover {
-  border-color: #cfcabf;
+  border-color: var(--border);
   color: var(--ink);
 }
 
 .date-order-toggle button.is-active {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .date-order-block {
@@ -939,13 +951,11 @@ textarea {
   line-height: 1.35;
 }
 
-.appearance-details,
-.more-details {
+.appearance-details {
   margin-top: 12px;
 }
 
-.appearance-details summary,
-.more-details summary {
+.appearance-details summary {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -953,18 +963,15 @@ textarea {
   list-style: none;
 }
 
-.appearance-details summary::-webkit-details-marker,
-.more-details summary::-webkit-details-marker {
+.appearance-details summary::-webkit-details-marker {
   display: none;
 }
 
-.appearance-details summary::before,
-.more-details summary::before {
+.appearance-details summary::before {
   content: "▸ ";
 }
 
-.appearance-details[open] summary::before,
-.more-details[open] summary::before {
+.appearance-details[open] summary::before {
   content: "▾ ";
 }
 
@@ -1026,8 +1033,8 @@ textarea {
   margin-top: 0.85rem;
   padding: 0.85rem 0.95rem;
   border-radius: 12px;
-  border: 1px solid #e3c4b8;
-  background: #fbf6f3;
+  border: 1px solid color-mix(in oklch, var(--destructive) 28%, var(--border));
+  background: color-mix(in oklch, var(--destructive) 8%, white);
 }
 
 .csv-missing p {
@@ -1450,8 +1457,8 @@ textarea {
 }
 
 .status.error {
-  background: #f8e8e4;
-  color: #9a3d2f;
+  background: color-mix(in oklch, var(--destructive) 12%, white);
+  color: var(--destructive);
 }
 
 .result-card {
