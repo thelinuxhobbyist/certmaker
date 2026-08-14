@@ -21,6 +21,10 @@ export interface FieldConfig {
   fontFamily?: string;
   textAlign?: TextAlign;
   fontWeight?: "normal" | "bold";
+  /** Allow line breaks in the form and on the printed certificate. */
+  multiline?: boolean;
+  /** Wrap width in canvas pixels for multiline text. */
+  maxWidth?: number;
   // Image fields (logo)
   image_r2_key?: string;
   width?: number;

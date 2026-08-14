@@ -14,6 +14,8 @@ export interface FieldConfig {
   fontFamily?: string;
   textAlign?: TextAlign;
   fontWeight?: "normal" | "bold";
+  multiline?: boolean;
+  maxWidth?: number;
   image_r2_key?: string;
   width?: number;
   height?: number;

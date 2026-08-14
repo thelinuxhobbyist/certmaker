@@ -169,6 +169,132 @@ function LogoNode({
   );
 }
 
+function CertTextNode({
+  field,
+  display,
+  placeholder,
+  selected,
+  scale,
+  canvasWidth,
+  onSelect,
+  onChangeField,
+}: {
+  field: FieldConfig;
+  display: string;
+  placeholder: boolean;
+  selected: boolean;
+  scale: number;
+  canvasWidth: number;
+  onSelect: (key: string) => void;
+  onChangeField: (key: string, patch: Partial<FieldConfig>) => void;
+}) {
+  const textRef = useRef<Konva.Text>(null);
+  const [box, setBox] = useState({ width: 200, height: 48 });
+  const fontSize = field.fontSize ?? 40;
+  const align = field.textAlign ?? "center";
+  const multiline = Boolean(field.multiline) || display.includes("\n");
+  const wrapWidth =
+    field.maxWidth ??
+    (multiline ? Math.round(canvasWidth * 0.7) : undefined);
+  const textWidth =
+    wrapWidth ??
+    Math.max(Math.round(fontSize * 4.5), Math.round(display.length * fontSize * 0.58));
+
+  useLayoutEffect(() => {
+    const node = textRef.current;
+    if (!node) return;
+    setBox({
+      width: Math.max(textWidth, node.width()),
+      height: Math.max(fontSize, node.height()),
+    });
+  }, [display, fontSize, textWidth, field.fontFamily, field.fontWeight, wrapWidth]);
+
+  const x =
+    align === "center"
+      ? field.x - textWidth / 2
+      : align === "right"
+        ? field.x - textWidth
+        : field.x;
+  const y = field.y - fontSize;
+
+  function selectThis() {
+    onSelect(field.key);
+  }
+
+  function setCursor(cursor: string, node: Konva.Node) {
+    const stage = node.getStage();
+    if (stage) stage.container().style.cursor = cursor;
+  }
+
+  return (
+    <Group
+      x={x}
+      y={y}
+      draggable
+      onMouseDown={selectThis}
+      onTouchStart={selectThis}
+      onClick={selectThis}
+      onTap={selectThis}
+      onMouseEnter={(e) => setCursor("grab", e.target)}
+      onMouseLeave={(e) => setCursor("default", e.target)}
+      onDragStart={(e) => {
+        selectThis();
+        setCursor("grabbing", e.target);
+      }}
+      onDragEnd={(e) => {
+        const node = e.target;
+        const nx = node.x();
+        const ny = node.y();
+        const anchorX =
+          align === "center"
+            ? nx + textWidth / 2
+            : align === "right"
+              ? nx + textWidth
+              : nx;
+        onChangeField(field.key, {
+          x: Math.round(anchorX),
+          y: Math.round(ny + fontSize),
+        });
+        setCursor("grab", node);
+      }}
+    >
+      <Rect
+        x={-10}
+        y={-8}
+        width={box.width + 20}
+        height={box.height + 16}
+        stroke={selected ? "#c96f4a" : "transparent"}
+        strokeWidth={Math.max(2, 2 / scale)}
+        cornerRadius={6}
+        fill={selected ? "rgba(201, 111, 74, 0.08)" : "rgba(0,0,0,0.001)"}
+      />
+      {placeholder && (
+        <Rect
+          x={0}
+          y={fontSize + 4}
+          width={textWidth}
+          height={Math.max(2, Math.round(fontSize * 0.06))}
+          fill="rgba(11, 11, 11, 0.28)"
+          cornerRadius={1}
+          listening={false}
+        />
+      )}
+      <Text
+        ref={textRef}
+        text={display}
+        fontSize={fontSize}
+        fill={placeholder ? "rgba(11, 11, 11, 0.35)" : field.fontColor || "#0b0b0b"}
+        fontFamily={field.fontFamily || DEFAULT_FONT_FAMILY}
+        fontStyle={field.fontWeight === "bold" ? "bold" : "normal"}
+        align={align}
+        width={textWidth}
+        wrap={multiline ? "word" : "none"}
+        lineHeight={multiline ? 1.3 : 1}
+      />
+    </Group>
+  );
+}
+
 export function CanvasEditor({
   width,
   height,
@@ -259,103 +385,25 @@ export function CanvasEditor({
 
               if (!isTextField(field)) return null;
 
-              const filled = (values[field.key] || "").trim();
-              const previewText = filled || field.defaultValue?.trim() || "";
+              const raw = values[field.key] || field.defaultValue || "";
+              const filled = raw.trim();
               const selected = selectedKey === field.key;
-              const label = fieldLabel(field.key, field.label);
-              const display = previewText || label;
-              const fontSize = field.fontSize ?? 40;
-              const textWidth = Math.max(
-                Math.round(fontSize * 4.5),
-                Math.round(display.length * fontSize * 0.58),
-              );
-              const align = field.textAlign ?? "center";
-              const x =
-                align === "center"
-                  ? field.x - textWidth / 2
-                  : align === "right"
-                    ? field.x - textWidth
-                    : field.x;
-              const y = field.y - fontSize;
-              const showAsPlaceholder = !previewText;
-
-              function selectThis() {
-                onSelect(field.key);
-              }
-
-              function setCursor(cursor: string, node: Konva.Node) {
-                const stage = node.getStage();
-                if (stage) stage.container().style.cursor = cursor;
-              }
+              const keepPlaceholder =
+                field.key === "student_name" || field.key === "cert_title";
+              if (!filled && !selected && !keepPlaceholder) return null;
 
               return (
-                <Group
+                <CertTextNode
                   key={field.key}
-                  x={x}
-                  y={y}
-                  draggable
-                  onMouseDown={selectThis}
-                  onTouchStart={selectThis}
-                  onClick={selectThis}
-                  onTap={selectThis}
-                  onMouseEnter={(e) => setCursor("grab", e.target)}
-                  onMouseLeave={(e) => setCursor("default", e.target)}
-                  onDragStart={(e) => {
-                    selectThis();
-                    setCursor("grabbing", e.target);
-                  }}
-                  onDragEnd={(e) => {
-                    const node = e.target;
-                    const nx = node.x();
-                    const ny = node.y();
-                    const anchorX =
-                      align === "center"
-                        ? nx + textWidth / 2
-                        : align === "right"
-                          ? nx + textWidth
-                          : nx;
-                    onChangeField(field.key, {
-                      x: Math.round(anchorX),
-                      y: Math.round(ny + fontSize),
-                    });
-                    setCursor("grab", node);
-                  }}
-                >
-                  <Rect
-                    x={-10}
-                    y={-8}
-                    width={textWidth + 20}
-                    height={fontSize + 22}
-                    stroke={selected ? "#c96f4a" : "transparent"}
-                    strokeWidth={Math.max(2, 2 / scale)}
-                    cornerRadius={6}
-                    fill={selected ? "rgba(201, 111, 74, 0.08)" : "rgba(0,0,0,0.001)"}
-                  />
-                  {showAsPlaceholder && (
-                    <Rect
-                      x={0}
-                      y={fontSize + 4}
-                      width={textWidth}
-                      height={Math.max(2, Math.round(fontSize * 0.06))}
-                      fill="rgba(11, 11, 11, 0.28)"
-                      cornerRadius={1}
-                      listening={false}
-                    />
-                  )}
-                  <Text
-                    text={display}
-                    fontSize={fontSize}
-                    fill={
-                      showAsPlaceholder
-                        ? "rgba(11, 11, 11, 0.35)"
-                        : field.fontColor || "#0b0b0b"
-                    }
-                    fontFamily={field.fontFamily || DEFAULT_FONT_FAMILY}
-                    fontStyle={field.fontWeight === "bold" ? "bold" : "normal"}
-                    align={align}
-                    width={textWidth}
-                  />
-                </Group>
+                  field={field}
+                  display={filled || fieldLabel(field.key, field.label)}
+                  placeholder={!filled}
+                  selected={selected}
+                  scale={scale}
+                  canvasWidth={width}
+                  onSelect={onSelect}
+                  onChangeField={onChangeField}
+                />
               );
             })}
           </Layer>

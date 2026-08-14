@@ -42,6 +42,22 @@ const ALIASES: Record<string, string[]> = {
     "cert_number",
     "credential_id",
   ],
+  awarded_for: [
+    "awarded_for",
+    "awarded",
+    "reason",
+    "achievement",
+    "in_recognition_of",
+    "for",
+  ],
+  additional_message: [
+    "additional_message",
+    "message",
+    "citation",
+    "description",
+    "wording",
+    "body",
+  ],
   course_id: ["course_id", "course", "course_code", "code", "module_id"],
   course_name: [
     "course_name",
@@ -96,6 +112,12 @@ function aliasesForField(field: FieldConfig): string[] {
     extras.push(...ALIASES.cert_id);
   }
   if (key.includes("grade") || key.includes("result")) extras.push(...ALIASES.grade);
+  if (key.includes("award") || key.includes("attendance") || key.includes("recognition")) {
+    extras.push(...ALIASES.awarded_for);
+  }
+  if (key.includes("message") || key.includes("citation") || key.includes("description")) {
+    extras.push(...ALIASES.additional_message);
+  }
 
   return [...new Set([...known, ...extras])];
 }

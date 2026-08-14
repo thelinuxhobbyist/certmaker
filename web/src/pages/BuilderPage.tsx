@@ -38,6 +38,7 @@ const STANDARD_FIELDS: Array<{
   label: string;
   optional?: boolean;
   static?: boolean;
+  multiline?: boolean;
   defaultValue?: string;
 }> = [
   {
@@ -46,23 +47,52 @@ const STANDARD_FIELDS: Array<{
     static: true,
     defaultValue: "Certificate of Achievement",
   },
-  { key: "student_name", label: "Student name" },
+  { key: "student_name", label: "Recipient / student name" },
+  {
+    key: "awarded_for",
+    label: "Awarded for",
+    optional: true,
+    static: true,
+    multiline: true,
+  },
+  {
+    key: "additional_message",
+    label: "Additional message",
+    optional: true,
+    static: true,
+    multiline: true,
+  },
   { key: "issue_date", label: "Issue date", optional: true },
   { key: "cert_id", label: "Certificate ID", optional: true },
 ];
+
+const STANDARD_KEYS = new Set(STANDARD_FIELDS.map((f) => f.key));
+const DEFAULT_TEXT_WRAP = 840;
 
 function defaultFontSize(key: string): number {
   if (key === "cert_title") return 56;
   if (key === "student_name") return 64;
   if (key === "issue_date") return 28;
   if (key === "cert_id") return 22;
-  return 40;
+  if (key === "awarded_for") return 28;
+  if (key === "additional_message") return 22;
+  return 32;
 }
 
 function defaultFontFamily(key: string): string {
   if (key === "cert_title") return TITLE_FONT_FAMILY;
   if (key === "student_name") return "Cormorant Garamond Light";
   return DEFAULT_FONT_FAMILY;
+}
+
+function defaultY(key: string, index: number): number {
+  if (key === "cert_title") return 200;
+  if (key === "student_name") return 340;
+  if (key === "awarded_for") return 430;
+  if (key === "additional_message") return 520;
+  if (key === "issue_date") return 680;
+  if (key === "cert_id") return 750;
+  return 430 + Math.max(0, index) * 70;
 }
 
 function defaultField(
@@ -72,19 +102,67 @@ function defaultField(
   extras?: Partial<FieldConfig>,
 ): FieldConfig {
   const fontSize = defaultFontSize(key);
+  const multiline = extras?.multiline ?? (key === "awarded_for" || key === "additional_message");
   return {
     key,
     label,
     type: "text",
     x: 600,
-    y: key === "cert_title" ? 220 : 340 + Math.max(0, index - 1) * 90,
+    y: defaultY(key, index),
     fontSize,
     fontColor: "#171717",
     fontFamily: defaultFontFamily(key),
     textAlign: "center",
     fontWeight: key === "student_name" || key === "cert_title" ? "bold" : "normal",
+    ...(multiline ? { multiline: true, maxWidth: DEFAULT_TEXT_WRAP } : {}),
     ...extras,
   };
+}
+
+function isStandardField(field: FieldConfig): boolean {
+  return STANDARD_KEYS.has(field.key);
+}
+
+function isCustomTextField(field: FieldConfig): boolean {
+  return isTextField(field) && !isStandardField(field);
+}
+
+function isMultilineField(field: FieldConfig): boolean {
+  return Boolean(field.multiline) || field.key === "awarded_for" || field.key === "additional_message";
+}
+
+function ensureStandardFields(fields: FieldConfig[]): FieldConfig[] {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  const next: FieldConfig[] = fields.filter((f) => isImageField(f));
+  STANDARD_FIELDS.forEach((spec, i) => {
+    const existing = byKey.get(spec.key);
+    if (existing) {
+      next.push({
+        ...existing,
+        label: existing.label || spec.label,
+        static: spec.static ?? existing.static,
+        multiline: spec.multiline || existing.multiline,
+        maxWidth: spec.multiline ? existing.maxWidth ?? DEFAULT_TEXT_WRAP : existing.maxWidth,
+      });
+    } else {
+      next.push(
+        defaultField(spec.key, spec.label, i, {
+          static: spec.static,
+          defaultValue: spec.defaultValue,
+          multiline: spec.multiline,
+        }),
+      );
+    }
+  });
+  for (const field of fields) {
+    if (isImageField(field) || STANDARD_KEYS.has(field.key)) continue;
+    next.push({
+      ...field,
+      multiline: field.multiline ?? true,
+      maxWidth: field.maxWidth ?? DEFAULT_TEXT_WRAP,
+    });
+  }
+  return next;
 }
 
 function emptyValues(fields: FieldConfig[]): Record<string, string> {
@@ -97,11 +175,14 @@ function emptyValues(fields: FieldConfig[]): Record<string, string> {
 }
 
 function initialFields(): FieldConfig[] {
-  return STANDARD_FIELDS.map((f, i) =>
-    defaultField(f.key, f.label, i, {
-      static: f.static,
-      defaultValue: f.defaultValue,
-    }),
+  return ensureStandardFields(
+    STANDARD_FIELDS.map((f, i) =>
+      defaultField(f.key, f.label, i, {
+        static: f.static,
+        defaultValue: f.defaultValue,
+        multiline: f.multiline,
+      }),
+    ),
   );
 }
 
@@ -119,6 +200,69 @@ function mergeValues(
     }
   }
   return next;
+}
+
+function FieldStyleControls({
+  field,
+  onChange,
+}: {
+  field: FieldConfig;
+  onChange: (key: string, patch: Partial<FieldConfig>) => void;
+}) {
+  return (
+    <div className="mini-typography" onClick={(e) => e.stopPropagation()}>
+      <div>
+        <label htmlFor={`font-${field.key}`}>Font</label>
+        <select
+          id={`font-${field.key}`}
+          value={field.fontFamily || DEFAULT_FONT_FAMILY}
+          onChange={(e) => onChange(field.key, { fontFamily: e.target.value })}
+        >
+          {CERT_FONTS.map((font) => (
+            <option key={font.id} value={font.family}>
+              {font.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor={`size-${field.key}`}>Size</label>
+        <input
+          id={`size-${field.key}`}
+          type="number"
+          min={14}
+          max={140}
+          value={field.fontSize ?? 40}
+          onChange={(e) => onChange(field.key, { fontSize: Number(e.target.value) || 18 })}
+        />
+      </div>
+      <div>
+        <label htmlFor={`color-${field.key}`}>Colour</label>
+        <input
+          id={`color-${field.key}`}
+          type="color"
+          value={field.fontColor || "#171717"}
+          onChange={(e) => onChange(field.key, { fontColor: e.target.value })}
+        />
+      </div>
+      <div>
+        <label htmlFor={`align-${field.key}`}>Align</label>
+        <select
+          id={`align-${field.key}`}
+          value={field.textAlign || "center"}
+          onChange={(e) =>
+            onChange(field.key, {
+              textAlign: e.target.value as FieldConfig["textAlign"],
+            })
+          }
+        >
+          <option value="center">Center</option>
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+    </div>
+  );
 }
 
 export function BuilderPage() {
@@ -143,7 +287,7 @@ export function BuilderPage() {
   );
   const [imageUrls, setImageUrls] = useState<Record<string, string | null>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>("cert_title");
-  const [customLabel, setCustomLabel] = useState("");
+  const [customDraftLabel, setCustomDraftLabel] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -204,10 +348,17 @@ export function BuilderPage() {
   function updateValue(key: string, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
     setSelectedKey(key);
-    const field = fields.find((f) => f.key === key);
-    if (field?.static) {
-      updateField(key, { defaultValue: value });
-    }
+    setFields((prev) =>
+      prev.map((f) => (f.key === key && f.static ? { ...f, defaultValue: value } : f)),
+    );
+  }
+
+  function selectField(key: string | null, opts?: { focus?: boolean }) {
+    setSelectedKey(key);
+    if (!key || !opts?.focus) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(`val-${key}`)?.focus();
+    });
   }
 
   function changeDateOrder(order: DateOrder) {
@@ -273,8 +424,9 @@ export function BuilderPage() {
     setWidth(starter.width);
     setHeight(starter.height);
     setBackgroundFill(starter.backgroundColor);
-    setFields(starter.fields.map((f) => ({ ...f })));
-    setValues((prev) => mergeValues(starter.fields, prev));
+    const nextFields = ensureStandardFields(starter.fields.map((f) => ({ ...f })));
+    setFields(nextFields);
+    setValues((prev) => mergeValues(nextFields, prev));
     setSelectedKey("cert_title");
     setZoomLevel(1);
     setView("editor");
@@ -311,8 +463,9 @@ export function BuilderPage() {
     setDesignLabel(null);
     setTitle("Custom design");
     setBackgroundFill("#ffffff");
-    setFields(initialFields());
-    setValues((prev) => mergeValues(initialFields(), prev));
+    const nextFields = ensureStandardFields(initialFields());
+    setFields(nextFields);
+    setValues((prev) => mergeValues(nextFields, prev));
     setSelectedKey("cert_title");
     setZoomLevel(1);
     setView("editor");
@@ -325,8 +478,9 @@ export function BuilderPage() {
     setTitle(template.title);
     setWidth(template.width);
     setHeight(template.height);
-    setFields(template.fields_config.map((f) => ({ ...f })));
-    setValues((prev) => mergeValues(template.fields_config, prev));
+    const nextFields = ensureStandardFields(template.fields_config.map((f) => ({ ...f })));
+    setFields(nextFields);
+    setValues((prev) => mergeValues(nextFields, prev));
     setBackgroundKey(template.background_r2_key);
     setBackgroundUrl(template.background_url);
     if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
@@ -418,19 +572,52 @@ export function BuilderPage() {
   }
 
   function addCustomField() {
-    const label = customLabel.trim();
-    if (!label) return;
-    const key = label.replace(/\s+/g, "_").toLowerCase();
-    if (fields.some((f) => f.key === key)) {
-      setError(`Field "${label}" already exists`);
-      return;
-    }
-    const next = defaultField(key, label, fields.filter(isTextField).length);
+    const label = customDraftLabel.trim() || "Field name";
+    const named = Boolean(customDraftLabel.trim());
+    const key = `custom_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+    const textFields = fields.filter(isTextField);
+    const lastY = textFields.reduce((max, f) => Math.max(max, f.y), 430);
+    const next = defaultField(key, label, textFields.length, {
+      y: Math.min(780, lastY + 70),
+      multiline: true,
+      maxWidth: DEFAULT_TEXT_WRAP,
+      fontSize: 32,
+      fontWeight: "normal",
+    });
     setFields((prev) => [...prev, next]);
     setValues((prev) => ({ ...prev, [key]: "" }));
     setSelectedKey(key);
-    setCustomLabel("");
+    setCustomDraftLabel("");
     setError(null);
+    window.requestAnimationFrame(() => {
+      document.getElementById(named ? `val-${key}` : `label-${key}`)?.focus();
+    });
+  }
+
+  function removeCustomField(key: string) {
+    setFields((prev) => prev.filter((x) => x.key !== key));
+    setValues((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setSelectedKey((current) => (current === key ? "cert_title" : current));
+  }
+
+  function moveCustomField(key: string, direction: -1 | 1) {
+    setFields((prev) => {
+      const indices = prev
+        .map((f, i) => (isCustomTextField(f) ? i : -1))
+        .filter((i) => i >= 0);
+      const pos = indices.findIndex((i) => prev[i].key === key);
+      const swapWith = pos + direction;
+      if (pos < 0 || swapWith < 0 || swapWith >= indices.length) return prev;
+      const next = [...prev];
+      const a = indices[pos];
+      const b = indices[swapWith];
+      [next[a], next[b]] = [next[b], next[a]];
+      return next;
+    });
   }
 
   async function ensureBackgroundUploaded(): Promise<string> {
@@ -477,7 +664,7 @@ export function BuilderPage() {
       return;
     }
     if (!studentName) {
-      setError("Enter the student name to create a certificate");
+      setError("Enter the recipient name to create a certificate");
       setSelectedKey("student_name");
       document.getElementById("val-student_name")?.focus();
       return;
@@ -552,7 +739,7 @@ export function BuilderPage() {
   const readyLabel = !hasBackground
     ? "Choose a design or upload a background to get started."
     : !studentName
-      ? "Add a student name to finish this certificate."
+      ? "Add a recipient name to finish this certificate."
       : issueDateInvalid
         ? "Fix the issue date, or leave it blank."
         : uploading
@@ -566,6 +753,12 @@ export function BuilderPage() {
     : downloadDone
       ? "Downloaded ✓"
       : "Download certificate";
+
+  const textByKey = new Map(fields.filter(isTextField).map((f) => [f.key, f]));
+  const standardRows = STANDARD_FIELDS.map((spec) => textByKey.get(spec.key)).filter(
+    (f): f is FieldConfig => Boolean(f),
+  );
+  const customRows = fields.filter(isCustomTextField);
 
   if (view === "chooser") {
     return (
@@ -651,26 +844,34 @@ export function BuilderPage() {
           </div>
 
           <div className="field-group">
-            <p className="group-label">Certificate fields</p>
+            <p className="group-label">Certificate information</p>
+            <p className="field-help" style={{ marginTop: 0, marginBottom: 12 }}>
+              Edit the wording here. The preview updates as you type — drag text on the
+              certificate only to move it.
+            </p>
 
-            {fields.filter(isTextField).map((f) => {
-              const isStandard = STANDARD_FIELDS.some((s) => s.key === f.key);
-              const markedOptional = STANDARD_FIELDS.find((s) => s.key === f.key)?.optional;
-              const optional =
-                Boolean(markedOptional) || (!f.static && f.key !== "student_name");
+            {standardRows.map((f) => {
+              const spec = STANDARD_FIELDS.find((s) => s.key === f.key);
+              const optional = Boolean(spec?.optional);
               const required = f.key === "student_name";
               const active = selectedKey === f.key;
+              const multiline = isMultilineField(f);
               const placeholder = (() => {
                 if (f.key === "cert_title") return "e.g. Certificate of Achievement";
+                if (f.key === "student_name") return "e.g. Julie Barrington";
+                if (f.key === "awarded_for")
+                  return "e.g. 100% attendance throughout the full year of study";
+                if (f.key === "additional_message")
+                  return "e.g. In recognition of outstanding commitment, participation and dedication throughout the programme.";
                 if (f.key === "cert_id") return "e.g. CERT-2026-001";
                 if (f.key === "issue_date") return datePlaceholder(dateOrder);
-                if (optional) return `Optional — leave blank to hide`;
                 return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
               })();
               const dateError =
                 f.key === "issue_date" && dateTouched
                   ? issueDateError(values[f.key] || "", dateOrder)
                   : null;
+              const inputStyle = { fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY };
 
               return (
                 <div
@@ -679,7 +880,9 @@ export function BuilderPage() {
                   onClick={() => setSelectedKey(f.key)}
                 >
                   <div className="field-row-head">
-                    <span className="field-name">{fieldLabel(f.key, f.label)}</span>
+                    <label className="field-name" htmlFor={`val-${f.key}`}>
+                      {fieldLabel(f.key, f.label || spec?.label)}
+                    </label>
                     <span className="field-tag">
                       {f.static
                         ? "On every certificate"
@@ -687,37 +890,32 @@ export function BuilderPage() {
                           ? "Required"
                           : "Optional"}
                     </span>
-                    {!isStandard && (
-                      <button
-                        type="button"
-                        className="btn-text"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFields((prev) => prev.filter((x) => x.key !== f.key));
-                          setValues((prev) => {
-                            const next = { ...prev };
-                            delete next[f.key];
-                            return next;
-                          });
-                          setSelectedKey(null);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
                   </div>
-                  <input
-                    id={`val-${f.key}`}
-                    className="field-input"
-                    placeholder={placeholder}
-                    value={values[f.key] || ""}
-                    onChange={(e) => updateValue(f.key, e.target.value)}
-                    onFocus={() => setSelectedKey(f.key)}
-                    onBlur={() => {
-                      if (f.key === "issue_date") setDateTouched(true);
-                    }}
-                    style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
-                  />
+                  {multiline ? (
+                    <textarea
+                      id={`val-${f.key}`}
+                      className="field-input field-textarea"
+                      rows={f.key === "additional_message" ? 4 : 3}
+                      placeholder={placeholder}
+                      value={values[f.key] || ""}
+                      onChange={(e) => updateValue(f.key, e.target.value)}
+                      onFocus={() => setSelectedKey(f.key)}
+                      style={inputStyle}
+                    />
+                  ) : (
+                    <input
+                      id={`val-${f.key}`}
+                      className="field-input"
+                      placeholder={placeholder}
+                      value={values[f.key] || ""}
+                      onChange={(e) => updateValue(f.key, e.target.value)}
+                      onFocus={() => setSelectedKey(f.key)}
+                      onBlur={() => {
+                        if (f.key === "issue_date") setDateTouched(true);
+                      }}
+                      style={inputStyle}
+                    />
+                  )}
                   {f.key === "issue_date" && (
                     <>
                       <DateOrderToggle value={dateOrder} onChange={changeDateOrder} />
@@ -729,80 +927,122 @@ export function BuilderPage() {
                     </>
                   )}
                   {f.key !== "issue_date" && optional && !(values[f.key] || "").trim() && (
-                    <p className="field-help">Left blank, it won&apos;t appear on the certificate.</p>
+                    <p className="field-help">
+                      Left blank, it won&apos;t appear on the certificate.
+                    </p>
                   )}
-                  <div className="mini-typography" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      <label htmlFor={`font-${f.key}`}>Font</label>
-                      <select
-                        id={`font-${f.key}`}
-                        value={f.fontFamily || DEFAULT_FONT_FAMILY}
-                        onChange={(e) => updateField(f.key, { fontFamily: e.target.value })}
+                  <FieldStyleControls field={f} onChange={updateField} />
+                </div>
+              );
+            })}
+
+            {customRows.length > 0 && (
+              <p className="group-label" style={{ marginTop: 20 }}>
+                Additional custom fields
+              </p>
+            )}
+
+            {customRows.map((f, index) => {
+              const active = selectedKey === f.key;
+              return (
+                <div
+                  key={f.key}
+                  className={`field-row custom-field-row${active ? " selected" : ""}`}
+                  onClick={() => setSelectedKey(f.key)}
+                >
+                  <div className="field-row-head">
+                    <span className="field-name">Custom field</span>
+                    <span className="field-tag">Optional</span>
+                    <div className="field-reorder">
+                      <button
+                        type="button"
+                        className="btn-text"
+                        disabled={index === 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveCustomField(f.key, -1);
+                        }}
                       >
-                        {CERT_FONTS.map((font) => (
-                          <option key={font.id} value={font.family}>
-                            {font.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor={`size-${f.key}`}>Size</label>
-                      <input
-                        id={`size-${f.key}`}
-                        type="number"
-                        min={14}
-                        max={140}
-                        value={f.fontSize ?? 40}
-                        onChange={(e) =>
-                          updateField(f.key, { fontSize: Number(e.target.value) || 18 })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor={`color-${f.key}`}>Colour</label>
-                      <input
-                        id={`color-${f.key}`}
-                        type="color"
-                        value={f.fontColor || "#171717"}
-                        onChange={(e) => updateField(f.key, { fontColor: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor={`align-${f.key}`}>Align</label>
-                      <select
-                        id={`align-${f.key}`}
-                        value={f.textAlign || "center"}
-                        onChange={(e) =>
-                          updateField(f.key, {
-                            textAlign: e.target.value as FieldConfig["textAlign"],
-                          })
-                        }
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-text"
+                        disabled={index === customRows.length - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveCustomField(f.key, 1);
+                        }}
                       >
-                        <option value="center">Center</option>
-                        <option value="left">Left</option>
-                        <option value="right">Right</option>
-                      </select>
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-text"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeCustomField(f.key);
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
+                  <label className="nested-label" htmlFor={`label-${f.key}`}>
+                    Field name
+                  </label>
+                  <input
+                    id={`label-${f.key}`}
+                    className="field-input"
+                    placeholder="e.g. Course Name"
+                    value={f.label || ""}
+                    onChange={(e) => updateField(f.key, { label: e.target.value })}
+                    onFocus={() => setSelectedKey(f.key)}
+                  />
+                  <label className="nested-label" htmlFor={`val-${f.key}`}>
+                    Field value
+                  </label>
+                  <textarea
+                    id={`val-${f.key}`}
+                    className="field-input field-textarea"
+                    rows={3}
+                    placeholder="e.g. Computer Science"
+                    value={values[f.key] || ""}
+                    onChange={(e) => updateValue(f.key, e.target.value)}
+                    onFocus={() => setSelectedKey(f.key)}
+                    style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
+                  />
+                  {!(values[f.key] || "").trim() && (
+                    <p className="field-help">
+                      Left blank, it won&apos;t appear on the certificate.
+                    </p>
+                  )}
+                  <FieldStyleControls field={f} onChange={updateField} />
                 </div>
               );
             })}
 
             <div className="add-field-row">
               <input
-                placeholder="Add another field, e.g. Course name"
-                value={customLabel}
-                onChange={(e) => setCustomLabel(e.target.value)}
+                placeholder="Optional name, e.g. Course Name"
+                value={customDraftLabel}
+                onChange={(e) => setCustomDraftLabel(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") addCustomField();
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCustomField();
+                  }
                 }}
-                aria-label="New field name"
+                aria-label="New custom field name"
               />
               <button type="button" className="btn" onClick={addCustomField}>
-                Add field
+                Add another field
               </button>
             </div>
+            <p className="field-help">
+              Use this for extras such as course, grade, attendance, instructor, or
+              achievement. Each field has a name and a value.
+            </p>
           </div>
         </div>
 
@@ -839,7 +1079,7 @@ export function BuilderPage() {
               values={previewValues}
               imageUrls={imageUrls}
               selectedKey={selectedKey}
-              onSelect={setSelectedKey}
+              onSelect={(key) => selectField(key, { focus: true })}
               onChangeField={updateField}
               zoom={zoomLevel}
             />

@@ -26,6 +26,62 @@ function anchorForAlign(align: FieldConfig["textAlign"]): string {
   return "start";
 }
 
+const DEFAULT_WRAP_WIDTH = 840;
+const LINE_HEIGHT = 1.3;
+
+export function wrapTextLines(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+): string[] {
+  const avg = Math.max(6, fontSize * 0.52);
+  const maxChars = Math.max(8, Math.floor(maxWidth / avg));
+  const paragraphs = String(text).split(/\r?\n/);
+  const lines: string[] = [];
+
+  for (const para of paragraphs) {
+    if (!para) {
+      lines.push("");
+      continue;
+    }
+    const words = para.split(/\s+/);
+    let current = "";
+    for (const word of words) {
+      const next = current ? `${current} ${word}` : word;
+      if (current && next.length > maxChars) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (current) lines.push(current);
+  }
+
+  return lines;
+}
+
+function svgTextNode(field: FieldConfig, raw: string): string {
+  const anchor = anchorForAlign(field.textAlign ?? "center");
+  const weight = field.fontWeight === "bold" ? "700" : "400";
+  const family = escapeXml(field.fontFamily || "Noto Sans");
+  const size = field.fontSize ?? 40;
+  const color = escapeXml(field.fontColor || "#0b0b0b");
+  const multiline = Boolean(field.multiline) || raw.includes("\n");
+  const wrapWidth = field.maxWidth ?? DEFAULT_WRAP_WIDTH;
+  const lines = multiline ? wrapTextLines(raw, wrapWidth, size) : [raw.replace(/\s+/g, " ")];
+  const dy = Math.round(size * LINE_HEIGHT);
+  const tspans = lines
+    .map((line, i) => {
+      const content = escapeXml(line) || "&#160;";
+      const shift = i === 0 ? 0 : dy;
+      return `<tspan x="${field.x}" dy="${shift}">${content}</tspan>`;
+    })
+    .join("");
+
+  return `<text x="${field.x}" y="${field.y}" fill="${color}" font-size="${size}" font-family="${family}" font-weight="${weight}" text-anchor="${anchor}">${tspans}</text>`;
+}
+
 /** Merge static defaultValue into per-cert data (title, org name, etc.). */
 export function mergeStaticFieldData(
   fields: FieldConfig[],
@@ -68,15 +124,9 @@ export function buildCertificateSvg(opts: {
 
       if (!isTextField(field)) return "";
 
-      const raw = data[field.key] ?? "";
-      if (!String(raw).trim()) return "";
-      const value = escapeXml(String(raw));
-      const anchor = anchorForAlign(field.textAlign ?? "center");
-      const weight = field.fontWeight === "bold" ? "700" : "400";
-      const family = escapeXml(field.fontFamily || "Noto Sans");
-      const size = field.fontSize ?? 40;
-      const color = escapeXml(field.fontColor || "#0b0b0b");
-      return `<text x="${field.x}" y="${field.y}" fill="${color}" font-size="${size}" font-family="${family}" font-weight="${weight}" text-anchor="${anchor}">${value}</text>`;
+      const raw = String(data[field.key] ?? "");
+      if (!raw.trim()) return "";
+      return svgTextNode(field, raw);
     })
     .filter(Boolean)
     .join("\n");
