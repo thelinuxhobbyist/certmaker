@@ -144,11 +144,17 @@ function scoreHeader(header: string, field: FieldConfig): number {
   if (field.key === "student_name" && (isFirstNameHeader(header) || isLastNameHeader(header))) {
     return 0;
   }
+  const label = field.label ? norm(field.label) : "";
+  const key = norm(field.key);
+
+  if (label && h === label) return 200;
+  if (key && !key.startsWith("custom_") && h === key) return 180;
+  if (label && h.replace(/_/g, "") === label.replace(/_/g, "")) return 170;
+
   const aliases = aliasesForField(field);
   if (aliases.includes(h)) return 100;
   if (aliases.some((a) => a.length >= 4 && (h === a || h.includes(a) || a.includes(h)))) return 70;
-  const label = field.label ? norm(field.label) : "";
-  if (label && label.length >= 4 && (h.includes(label) || label.includes(h))) return 60;
+  if (label && label.length >= 2 && (h.includes(label) || label.includes(h))) return 60;
   return 0;
 }
 
@@ -199,7 +205,7 @@ export function autoMapColumns(
     .sort((a, b) => b.bestScore - a.bestScore);
 
   for (const item of ranked) {
-    if (item.bestScore >= 60 && item.bestHeader && !used.has(item.bestHeader)) {
+    if (item.bestScore >= 50 && item.bestHeader && !used.has(item.bestHeader)) {
       mapping[item.field.key] = item.bestHeader;
       used.add(item.bestHeader);
     } else {
@@ -254,4 +260,18 @@ export function unusedHeaders(
 ): string[] {
   const used = new Set(Object.values(mapping).filter(Boolean));
   return headers.filter((h) => h.trim() && !used.has(h));
+}
+
+const BUILTIN_PER_PERSON = new Set(["student_name", "issue_date", "cert_id"]);
+
+/** Extra per-person fields added in the designer (Course, Grade, …). */
+export function isPersonalizedField(field: FieldConfig): boolean {
+  return isTextField(field) && !field.static && !isImageField(field) && !BUILTIN_PER_PERSON.has(field.key);
+}
+
+export function unmatchedPersonalizedFields(
+  fields: FieldConfig[],
+  mapping: Record<string, string>,
+): FieldConfig[] {
+  return fields.filter((field) => isPersonalizedField(field) && !(mapping[field.key] || "").trim());
 }

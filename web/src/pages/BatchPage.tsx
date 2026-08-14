@@ -7,6 +7,8 @@ import {
   STUDENT_LAST_KEY,
   autoMapColumns,
   combineStudentName,
+  isPersonalizedField,
+  unmatchedPersonalizedFields,
   unusedHeaders,
 } from "../lib/csvMap";
 import {
@@ -18,7 +20,8 @@ import {
 } from "../lib/issueDate";
 
 function niceLabel(field: { key: string; label?: string }) {
-  if (field.label) return field.label;
+  if (field.label?.trim()) return field.label.trim();
+  if (field.key.startsWith("custom_")) return "Unnamed field";
   return field.key
     .split("_")
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
@@ -44,6 +47,7 @@ export function BatchPage() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
+  const [allowMissingFields, setAllowMissingFields] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -73,6 +77,7 @@ export function BatchPage() {
   useEffect(() => {
     if (!template || headers.length === 0) return;
     setMapping(autoMapColumns(headers, template.fields_config));
+    setAllowMissingFields(false);
   }, [template?.id, headers.join("|")]);
 
   function onCsv(file: File | null) {
@@ -114,8 +119,8 @@ export function BatchPage() {
         const count = data.length;
         setStatus(
           cols.length === 1
-            ? `Found ${count} name${count === 1 ? "" : "s"}. We will use this column for the student name.`
-            : `Found ${count} row${count === 1 ? "" : "s"} and ${cols.length} columns. We matched what we could — check the links below.`,
+            ? `Found ${count} name${count === 1 ? "" : "s"}. We will use this column for the recipient name.`
+            : `Found ${count} row${count === 1 ? "" : "s"} and ${cols.length} columns.`,
         );
       },
       error: (err) => setError(err.message),
@@ -163,6 +168,16 @@ export function BatchPage() {
       return;
     }
 
+    const unmatched = unmatchedPersonalizedFields(template.fields_config, mapping);
+    if (unmatched.length > 0 && !allowMissingFields) {
+      setError(
+        `This CSV has no column for ${unmatched
+          .map((f) => niceLabel(f))
+          .join(", ")}. Add those columns, match them below, or confirm you want to leave them blank.`,
+      );
+      return;
+    }
+
     const dateHeader = mapping.issue_date;
     const invalidDates = dateHeader
       ? rows.filter((row) => {
@@ -181,7 +196,7 @@ export function BatchPage() {
       });
       setResults(res);
       const dateNote = invalidDates
-        ? ` ${invalidDates} issue date${invalidDates === 1 ? " was" : "s were"} invalid and left blank — use ${dateOrder === "uk" ? "day/month/year (13/08/2026)" : "month/day/year (08/13/2026)"}.`
+        ? ` ${invalidDates} issue date${invalidDates === 1 ? " was" : "s were"} invalid and left blank.`
         : "";
       setStatus(
         res.failed
@@ -222,6 +237,18 @@ export function BatchPage() {
   const ready = Boolean(template && rows.length > 0 && mapping.student_name);
   const previewRows = rows.slice(0, 3);
   const fromDesigner = Boolean(templateId && template);
+  const unmatchedPersonal = template
+    ? unmatchedPersonalizedFields(template.fields_config, mapping)
+    : [];
+  const matchedFills = template
+    ? template.fields_config.filter(
+        (field) =>
+          isTextField(field) &&
+          !field.static &&
+          !isImageField(field) &&
+          mapping[field.key],
+      )
+    : [];
 
   return (
     <section className="panel">
@@ -274,8 +301,8 @@ export function BatchPage() {
       <div className="bulk-step">
         <h3 className="side-title">2. Upload your list</h3>
         <p className="muted">
-          Use a CSV file. One row per person. You only need a name column — course titles,
-          dates, and certificate IDs are optional.
+          Use a CSV file. One row per person. Name the columns the same as your personalized
+          fields — for example Name, Course, Grade, Instructor. Dates like 10/07/26 are fine.
         </p>
         <div className="field">
           <label htmlFor="csv">CSV file</label>
@@ -298,11 +325,20 @@ export function BatchPage() {
 
       {template && headers.length > 0 && (
         <div className="bulk-step">
-          <h3 className="side-title">3. Connect columns</h3>
+          <h3 className="side-title">3. Check the match</h3>
           <p className="muted">
-            We guessed the matches. Change them if needed. Leave a field on “Skip” if your
-            list does not have that information.
+            Columns named the same as your personalized fields are filled automatically.
+            Change a match only if we got it wrong.
           </p>
+          {matchedFills.length > 0 && (
+            <div className="csv-match-list">
+              {matchedFills.map((field) => (
+                <span key={field.key} className="csv-match-chip">
+                  {niceLabel(field)} ← {mapping[field.key]}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="section-grid">
             {template.fields_config
               .filter((field) => isTextField(field) && !field.static && !isImageField(field))
@@ -311,9 +347,11 @@ export function BatchPage() {
                 <label htmlFor={`map-${field.key}`}>
                   {niceLabel(field)}
                   {field.key === "student_name" ? (
-                    <span className="optional-tag"> first or full name</span>
+                    <span className="optional-tag"> name column</span>
+                  ) : isPersonalizedField(field) ? (
+                    <span className="optional-tag"> matches CSV column name</span>
                   ) : (
-                    <span className="optional-tag"> skip if missing</span>
+                    <span className="optional-tag"> optional</span>
                   )}
                 </label>
                 <select
@@ -379,10 +417,34 @@ export function BatchPage() {
             </div>
           )}
 
+          {unmatchedPersonal.length > 0 && (
+            <div className="csv-missing">
+              <p>
+                <strong>
+                  This CSV doesn&apos;t include{" "}
+                  {unmatchedPersonal.map((f) => niceLabel(f)).join(", ")}.
+                </strong>{" "}
+                Those parts of the certificate will be blank unless you add matching column
+                names (for example Course, Grade) or match them above.
+              </p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allowMissingFields}
+                  onChange={(e) => setAllowMissingFields(e.target.checked)}
+                />
+                <span>
+                  Create certificates anyway, leaving{" "}
+                  {unmatchedPersonal.map((f) => niceLabel(f)).join(", ")} blank
+                </span>
+              </label>
+            </div>
+          )}
+
           {leftoverColumns.length > 0 && (
             <p className="muted" style={{ marginTop: "0.75rem" }}>
-              Not used from your file: {leftoverColumns.join(", ")}. To print these on the
-              certificate, add matching sections in{" "}
+              Not used from your file: {leftoverColumns.join(", ")}. To print these, add a
+              personalized field with the same name in{" "}
               <Link className="linkish" to="/builder" style={{ display: "inline" }}>
                 Design
               </Link>
@@ -422,7 +484,11 @@ export function BatchPage() {
         <button
           type="button"
           className="btn btn-primary"
-          disabled={busy || !ready}
+          disabled={
+            busy ||
+            !ready ||
+            (unmatchedPersonal.length > 0 && !allowMissingFields)
+          }
           onClick={() => void runBatch()}
         >
           {busy ? "Creating…" : "Create certificates"}

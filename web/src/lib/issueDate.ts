@@ -68,13 +68,13 @@ export function dateOrderLabel(order: DateOrder): string {
 }
 
 export function datePlaceholder(order: DateOrder): string {
-  return order === "uk" ? "e.g. 13/08/2026 or 13 Aug 2026" : "e.g. 08/13/2026 or Aug 13, 2026";
+  return order === "uk" ? "e.g. 10/07/26 or 10 July 2026" : "e.g. 10/07/26 or July 10, 2026";
 }
 
 export function dateHelpText(order: DateOrder): string {
   return order === "uk"
-    ? "UK format: day/month/year, e.g. 13/08/2026 or 13 Aug 2026. Leave blank to hide."
-    : "US format: month/day/year, e.g. 08/13/2026 or Aug 13, 2026. Leave blank to hide.";
+    ? "Type the date however you like — 10/07/26, 10-07-2026 or 10 July 2026 all work. Leave blank to hide."
+    : "Type the date however you like — 10/07/26, 10-07-2026 or July 10, 2026 all work. Leave blank to hide.";
 }
 
 function utcDate(year: number, month: number, day: number): Date | null {
@@ -91,9 +91,15 @@ function utcDate(year: number, month: number, day: number): Date | null {
   return date;
 }
 
+/** 26 → 2026. Two-digit years are treated as 2000–2099. */
 function expandYear(year: number, digits: number): number | null {
   if (digits === 4) return year;
+  if (digits === 2 && year >= 0 && year <= 99) return 2000 + year;
   return null;
+}
+
+function yearFromCapture(value: string): number | null {
+  return expandYear(Number(value), value.length);
 }
 
 /** Parse a typed or spreadsheet date. Returns null if it is not a real date. */
@@ -109,7 +115,7 @@ export function parseIssueDate(input: string, order: DateOrder): Date | null {
 
   const numeric = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/.exec(raw);
   if (numeric) {
-    const year = expandYear(Number(numeric[3]), numeric[3].length);
+    const year = yearFromCapture(numeric[3]);
     if (year == null) return null;
     const first = Number(numeric[1]);
     const second = Number(numeric[2]);
@@ -119,19 +125,21 @@ export function parseIssueDate(input: string, order: DateOrder): Date | null {
   }
 
   const dayMonthYear =
-    /^(\d{1,2})\s+([A-Za-z]+)\.?\,?\s+(\d{4})$/.exec(raw);
+    /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\.?,?\s+(\d{2}|\d{4})$/.exec(raw);
   if (dayMonthYear) {
     const month = MONTHS[dayMonthYear[2].toLowerCase()];
-    if (!month) return null;
-    return utcDate(Number(dayMonthYear[3]), month, Number(dayMonthYear[1]));
+    const year = yearFromCapture(dayMonthYear[3]);
+    if (!month || year == null) return null;
+    return utcDate(year, month, Number(dayMonthYear[1]));
   }
 
   const monthDayYear =
-    /^([A-Za-z]+)\.?\,?\s+(\d{1,2})(?:st|nd|rd|th)?\,?\s+(\d{4})$/.exec(raw);
+    /^([A-Za-z]+)\.?,?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2}|\d{4})$/.exec(raw);
   if (monthDayYear) {
     const month = MONTHS[monthDayYear[1].toLowerCase()];
-    if (!month) return null;
-    return utcDate(Number(monthDayYear[3]), month, Number(monthDayYear[2]));
+    const year = yearFromCapture(monthDayYear[3]);
+    if (!month || year == null) return null;
+    return utcDate(year, month, Number(monthDayYear[2]));
   }
 
   return null;
@@ -163,11 +171,7 @@ export function issueDateError(input: string, order: DateOrder): string | null {
       : "That looks like a UK date (day/month/year). Switch to UK, or write month/day/year like 08/13/2026.";
   }
 
-  if (/^\d{1,2}[./-]\d{1,2}[./-]\d{2}$/.test(raw)) {
-    return "Use a 4-digit year, e.g. 2026.";
-  }
-
   return order === "uk"
-    ? "That isn’t a valid date. Use day/month/year, e.g. 13/08/2026 or 13 Aug 2026."
-    : "That isn’t a valid date. Use month/day/year, e.g. 08/13/2026 or Aug 13, 2026.";
+    ? "That isn’t a valid date. Try 10/07/26, 10-07-2026 or 10 July 2026."
+    : "That isn’t a valid date. Try 10/07/26, 10-07-2026 or July 10, 2026.";
 }

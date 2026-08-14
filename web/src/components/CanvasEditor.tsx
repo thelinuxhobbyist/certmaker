@@ -48,7 +48,8 @@ function useHtmlImage(url: string | null) {
 }
 
 export function fieldLabel(key: string, label?: string): string {
-  if (label) return label;
+  if (label?.trim()) return label.trim();
+  if (key.startsWith("custom_")) return "New field";
   return key
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -389,14 +390,16 @@ export function CanvasEditor({
               const filled = raw.trim();
               const selected = selectedKey === field.key;
               const keepPlaceholder =
-                field.key === "student_name" || field.key === "cert_title";
+                field.key === "student_name" ||
+                field.key === "cert_title" ||
+                (!field.static && field.key !== "issue_date" && field.key !== "cert_id");
               if (!filled && !selected && !keepPlaceholder) return null;
 
               return (
                 <CertTextNode
                   key={field.key}
                   field={field}
-                  display={filled || fieldLabel(field.key, field.label)}
+                  display={filled || fieldLabel(field.key, field.label) || "New field"}
                   placeholder={!filled}
                   selected={selected}
                   scale={scale}

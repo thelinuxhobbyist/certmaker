@@ -67,6 +67,12 @@ const STANDARD_FIELDS: Array<{
 ];
 
 const STANDARD_KEYS = new Set(STANDARD_FIELDS.map((f) => f.key));
+const PRIMARY_FIELD_KEYS = new Set([
+  "cert_title",
+  "student_name",
+  "awarded_for",
+  "issue_date",
+]);
 const DEFAULT_TEXT_WRAP = 840;
 
 function defaultFontSize(key: string): number {
@@ -210,58 +216,61 @@ function FieldStyleControls({
   onChange: (key: string, patch: Partial<FieldConfig>) => void;
 }) {
   return (
-    <div className="mini-typography" onClick={(e) => e.stopPropagation()}>
-      <div>
-        <label htmlFor={`font-${field.key}`}>Font</label>
-        <select
-          id={`font-${field.key}`}
-          value={field.fontFamily || DEFAULT_FONT_FAMILY}
-          onChange={(e) => onChange(field.key, { fontFamily: e.target.value })}
-        >
-          {CERT_FONTS.map((font) => (
-            <option key={font.id} value={font.family}>
-              {font.label}
-            </option>
-          ))}
-        </select>
+    <details className="appearance-details" onClick={(e) => e.stopPropagation()}>
+      <summary>Appearance</summary>
+      <div className="mini-typography">
+        <div>
+          <label htmlFor={`font-${field.key}`}>Font</label>
+          <select
+            id={`font-${field.key}`}
+            value={field.fontFamily || DEFAULT_FONT_FAMILY}
+            onChange={(e) => onChange(field.key, { fontFamily: e.target.value })}
+          >
+            {CERT_FONTS.map((font) => (
+              <option key={font.id} value={font.family}>
+                {font.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={`size-${field.key}`}>Size</label>
+          <input
+            id={`size-${field.key}`}
+            type="number"
+            min={14}
+            max={140}
+            value={field.fontSize ?? 40}
+            onChange={(e) => onChange(field.key, { fontSize: Number(e.target.value) || 18 })}
+          />
+        </div>
+        <div>
+          <label htmlFor={`color-${field.key}`}>Colour</label>
+          <input
+            id={`color-${field.key}`}
+            type="color"
+            value={field.fontColor || "#171717"}
+            onChange={(e) => onChange(field.key, { fontColor: e.target.value })}
+          />
+        </div>
+        <div>
+          <label htmlFor={`align-${field.key}`}>Align</label>
+          <select
+            id={`align-${field.key}`}
+            value={field.textAlign || "center"}
+            onChange={(e) =>
+              onChange(field.key, {
+                textAlign: e.target.value as FieldConfig["textAlign"],
+              })
+            }
+          >
+            <option value="center">Center</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
       </div>
-      <div>
-        <label htmlFor={`size-${field.key}`}>Size</label>
-        <input
-          id={`size-${field.key}`}
-          type="number"
-          min={14}
-          max={140}
-          value={field.fontSize ?? 40}
-          onChange={(e) => onChange(field.key, { fontSize: Number(e.target.value) || 18 })}
-        />
-      </div>
-      <div>
-        <label htmlFor={`color-${field.key}`}>Colour</label>
-        <input
-          id={`color-${field.key}`}
-          type="color"
-          value={field.fontColor || "#171717"}
-          onChange={(e) => onChange(field.key, { fontColor: e.target.value })}
-        />
-      </div>
-      <div>
-        <label htmlFor={`align-${field.key}`}>Align</label>
-        <select
-          id={`align-${field.key}`}
-          value={field.textAlign || "center"}
-          onChange={(e) =>
-            onChange(field.key, {
-              textAlign: e.target.value as FieldConfig["textAlign"],
-            })
-          }
-        >
-          <option value="center">Center</option>
-          <option value="left">Left</option>
-          <option value="right">Right</option>
-        </select>
-      </div>
-    </div>
+    </details>
   );
 }
 
@@ -287,7 +296,6 @@ export function BuilderPage() {
   );
   const [imageUrls, setImageUrls] = useState<Record<string, string | null>>({});
   const [selectedKey, setSelectedKey] = useState<string | null>("cert_title");
-  const [customDraftLabel, setCustomDraftLabel] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -572,13 +580,12 @@ export function BuilderPage() {
   }
 
   function addCustomField() {
-    const label = customDraftLabel.trim() || "Field name";
-    const named = Boolean(customDraftLabel.trim());
     const key = `custom_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
-    const textFields = fields.filter(isTextField);
-    const lastY = textFields.reduce((max, f) => Math.max(max, f.y), 430);
-    const next = defaultField(key, label, textFields.length, {
-      y: Math.min(780, lastY + 70),
+    const nameField = fields.find((f) => f.key === "student_name");
+    const existingCustom = fields.filter(isCustomTextField).length;
+    const y = Math.min(760, (nameField?.y ?? 340) + 90 + existingCustom * 52);
+    const next = defaultField(key, "", existingCustom, {
+      y,
       multiline: true,
       maxWidth: DEFAULT_TEXT_WRAP,
       fontSize: 32,
@@ -587,10 +594,10 @@ export function BuilderPage() {
     setFields((prev) => [...prev, next]);
     setValues((prev) => ({ ...prev, [key]: "" }));
     setSelectedKey(key);
-    setCustomDraftLabel("");
     setError(null);
+    setStatus("New field added on the preview — drag it into place, then name it to match your CSV column.");
     window.requestAnimationFrame(() => {
-      document.getElementById(named ? `val-${key}` : `label-${key}`)?.focus();
+      document.getElementById(`label-${key}`)?.focus();
     });
   }
 
@@ -602,22 +609,6 @@ export function BuilderPage() {
       return next;
     });
     setSelectedKey((current) => (current === key ? "cert_title" : current));
-  }
-
-  function moveCustomField(key: string, direction: -1 | 1) {
-    setFields((prev) => {
-      const indices = prev
-        .map((f, i) => (isCustomTextField(f) ? i : -1))
-        .filter((i) => i >= 0);
-      const pos = indices.findIndex((i) => prev[i].key === key);
-      const swapWith = pos + direction;
-      if (pos < 0 || swapWith < 0 || swapWith >= indices.length) return prev;
-      const next = [...prev];
-      const a = indices[pos];
-      const b = indices[swapWith];
-      [next[a], next[b]] = [next[b], next[a]];
-      return next;
-    });
   }
 
   async function ensureBackgroundUploaded(): Promise<string> {
@@ -758,7 +749,93 @@ export function BuilderPage() {
   const standardRows = STANDARD_FIELDS.map((spec) => textByKey.get(spec.key)).filter(
     (f): f is FieldConfig => Boolean(f),
   );
+  const primaryRows = standardRows.filter((f) => PRIMARY_FIELD_KEYS.has(f.key));
+  const moreRows = standardRows.filter((f) => !PRIMARY_FIELD_KEYS.has(f.key));
   const customRows = fields.filter(isCustomTextField);
+  const dateDisplay =
+    issueDateRaw && !issueDateInvalid ? normalizeIssueDate(issueDateRaw, dateOrder) : null;
+
+  function renderStandardRow(f: FieldConfig) {
+    const spec = STANDARD_FIELDS.find((s) => s.key === f.key);
+    const optional = Boolean(spec?.optional);
+    const required = f.key === "student_name";
+    const active = selectedKey === f.key;
+    const multiline = isMultilineField(f);
+    const placeholder = (() => {
+      if (f.key === "cert_title") return "e.g. Certificate of Achievement";
+      if (f.key === "student_name") return "e.g. Alex Morgan";
+      if (f.key === "awarded_for")
+        return "e.g. 100% attendance throughout the full year of study";
+      if (f.key === "additional_message")
+        return "e.g. In recognition of outstanding commitment throughout the programme.";
+      if (f.key === "cert_id") return "e.g. CERT-2026-001";
+      if (f.key === "issue_date") return datePlaceholder(dateOrder);
+      return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
+    })();
+    const dateError =
+      f.key === "issue_date" && dateTouched
+        ? issueDateError(values[f.key] || "", dateOrder)
+        : null;
+    const inputStyle = { fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY };
+
+    return (
+      <div
+        key={f.key}
+        className={`field-row${active ? " selected" : ""}`}
+        onClick={() => setSelectedKey(f.key)}
+      >
+        <div className="field-row-head">
+          <label className="field-name" htmlFor={`val-${f.key}`}>
+            {fieldLabel(f.key, f.label || spec?.label)}
+          </label>
+          {required ? <span className="field-tag">Required</span> : null}
+        </div>
+        {multiline ? (
+          <textarea
+            id={`val-${f.key}`}
+            className="field-input field-textarea"
+            rows={f.key === "additional_message" ? 3 : 2}
+            placeholder={placeholder}
+            value={values[f.key] || ""}
+            onChange={(e) => updateValue(f.key, e.target.value)}
+            onFocus={() => setSelectedKey(f.key)}
+            style={inputStyle}
+          />
+        ) : (
+          <input
+            id={`val-${f.key}`}
+            className="field-input"
+            placeholder={placeholder}
+            value={values[f.key] || ""}
+            onChange={(e) => updateValue(f.key, e.target.value)}
+            onFocus={() => setSelectedKey(f.key)}
+            onBlur={() => {
+              if (f.key === "issue_date") setDateTouched(true);
+            }}
+            style={inputStyle}
+          />
+        )}
+        {f.key === "issue_date" && (
+          <>
+            <DateOrderToggle value={dateOrder} onChange={changeDateOrder} />
+            {dateError ? (
+              <p className="field-error">{dateError}</p>
+            ) : dateDisplay ? (
+              <p className="field-confirm">
+                Displays as: <strong>{dateDisplay}</strong>
+              </p>
+            ) : (
+              <p className="field-help">{dateHelpText(dateOrder)}</p>
+            )}
+          </>
+        )}
+        {f.key !== "issue_date" && optional && !(values[f.key] || "").trim() && (
+          <p className="field-help">Left blank, it won&apos;t appear on the certificate.</p>
+        )}
+        {active ? <FieldStyleControls field={f} onChange={updateField} /> : null}
+      </div>
+    );
+  }
 
   if (view === "chooser") {
     return (
@@ -846,103 +923,30 @@ export function BuilderPage() {
           <div className="field-group">
             <p className="group-label">Certificate information</p>
             <p className="field-help" style={{ marginTop: 0, marginBottom: 12 }}>
-              Edit the wording here. The preview updates as you type — drag text on the
-              certificate only to move it.
+              Type here — the preview updates as you go. Drag anything on the certificate to
+              move it.
             </p>
 
-            {standardRows.map((f) => {
-              const spec = STANDARD_FIELDS.find((s) => s.key === f.key);
-              const optional = Boolean(spec?.optional);
-              const required = f.key === "student_name";
-              const active = selectedKey === f.key;
-              const multiline = isMultilineField(f);
-              const placeholder = (() => {
-                if (f.key === "cert_title") return "e.g. Certificate of Achievement";
-                if (f.key === "student_name") return "e.g. Julie Barrington";
-                if (f.key === "awarded_for")
-                  return "e.g. 100% attendance throughout the full year of study";
-                if (f.key === "additional_message")
-                  return "e.g. In recognition of outstanding commitment, participation and dedication throughout the programme.";
-                if (f.key === "cert_id") return "e.g. CERT-2026-001";
-                if (f.key === "issue_date") return datePlaceholder(dateOrder);
-                return `Enter ${fieldLabel(f.key, f.label).toLowerCase()}`;
-              })();
-              const dateError =
-                f.key === "issue_date" && dateTouched
-                  ? issueDateError(values[f.key] || "", dateOrder)
-                  : null;
-              const inputStyle = { fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY };
+            {primaryRows.map((f) => renderStandardRow(f))}
 
-              return (
-                <div
-                  key={f.key}
-                  className={`field-row${active ? " selected" : ""}`}
-                  onClick={() => setSelectedKey(f.key)}
-                >
-                  <div className="field-row-head">
-                    <label className="field-name" htmlFor={`val-${f.key}`}>
-                      {fieldLabel(f.key, f.label || spec?.label)}
-                    </label>
-                    <span className="field-tag">
-                      {f.static
-                        ? "On every certificate"
-                        : required
-                          ? "Required"
-                          : "Optional"}
-                    </span>
-                  </div>
-                  {multiline ? (
-                    <textarea
-                      id={`val-${f.key}`}
-                      className="field-input field-textarea"
-                      rows={f.key === "additional_message" ? 4 : 3}
-                      placeholder={placeholder}
-                      value={values[f.key] || ""}
-                      onChange={(e) => updateValue(f.key, e.target.value)}
-                      onFocus={() => setSelectedKey(f.key)}
-                      style={inputStyle}
-                    />
-                  ) : (
-                    <input
-                      id={`val-${f.key}`}
-                      className="field-input"
-                      placeholder={placeholder}
-                      value={values[f.key] || ""}
-                      onChange={(e) => updateValue(f.key, e.target.value)}
-                      onFocus={() => setSelectedKey(f.key)}
-                      onBlur={() => {
-                        if (f.key === "issue_date") setDateTouched(true);
-                      }}
-                      style={inputStyle}
-                    />
-                  )}
-                  {f.key === "issue_date" && (
-                    <>
-                      <DateOrderToggle value={dateOrder} onChange={changeDateOrder} />
-                      {dateError ? (
-                        <p className="field-error">{dateError}</p>
-                      ) : (
-                        <p className="field-help">{dateHelpText(dateOrder)}</p>
-                      )}
-                    </>
-                  )}
-                  {f.key !== "issue_date" && optional && !(values[f.key] || "").trim() && (
-                    <p className="field-help">
-                      Left blank, it won&apos;t appear on the certificate.
-                    </p>
-                  )}
-                  <FieldStyleControls field={f} onChange={updateField} />
-                </div>
-              );
-            })}
+            <details
+              className="more-details"
+              {...(moreRows.some((f) => f.key === selectedKey) ? { open: true } : {})}
+            >
+              <summary>More details</summary>
+              {moreRows.map((f) => renderStandardRow(f))}
+            </details>
+          </div>
 
-            {customRows.length > 0 && (
-              <p className="group-label" style={{ marginTop: 20 }}>
-                Additional custom fields
-              </p>
-            )}
+          <div className="field-group">
+            <p className="group-label">Personalized information</p>
+            <p className="field-help" style={{ marginTop: 0, marginBottom: 12 }}>
+              Add information that changes between certificates, such as a course, grade,
+              instructor or award. Name each field to match your spreadsheet column — then
+              Make many can fill it automatically from a CSV.
+            </p>
 
-            {customRows.map((f, index) => {
+            {customRows.map((f) => {
               const active = selectedKey === f.key;
               return (
                 <div
@@ -951,42 +955,17 @@ export function BuilderPage() {
                   onClick={() => setSelectedKey(f.key)}
                 >
                   <div className="field-row-head">
-                    <span className="field-name">Custom field</span>
-                    <span className="field-tag">Optional</span>
-                    <div className="field-reorder">
-                      <button
-                        type="button"
-                        className="btn-text"
-                        disabled={index === 0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveCustomField(f.key, -1);
-                        }}
-                      >
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-text"
-                        disabled={index === customRows.length - 1}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveCustomField(f.key, 1);
-                        }}
-                      >
-                        Down
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-text"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeCustomField(f.key);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
+                    <span className="field-name">{f.label?.trim() || "New field"}</span>
+                    <button
+                      type="button"
+                      className="btn-text"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCustomField(f.key);
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                   <label className="nested-label" htmlFor={`label-${f.key}`}>
                     Field name
@@ -994,55 +973,36 @@ export function BuilderPage() {
                   <input
                     id={`label-${f.key}`}
                     className="field-input"
-                    placeholder="e.g. Course Name"
+                    placeholder="e.g. Course"
                     value={f.label || ""}
                     onChange={(e) => updateField(f.key, { label: e.target.value })}
                     onFocus={() => setSelectedKey(f.key)}
                   />
                   <label className="nested-label" htmlFor={`val-${f.key}`}>
-                    Field value
+                    Preview value
                   </label>
                   <textarea
                     id={`val-${f.key}`}
                     className="field-input field-textarea"
-                    rows={3}
+                    rows={2}
                     placeholder="e.g. Computer Science"
                     value={values[f.key] || ""}
                     onChange={(e) => updateValue(f.key, e.target.value)}
                     onFocus={() => setSelectedKey(f.key)}
                     style={{ fontFamily: f.fontFamily || DEFAULT_FONT_FAMILY }}
                   />
-                  {!(values[f.key] || "").trim() && (
-                    <p className="field-help">
-                      Left blank, it won&apos;t appear on the certificate.
-                    </p>
-                  )}
-                  <FieldStyleControls field={f} onChange={updateField} />
+                  <p className="field-help">
+                    Drag this on the preview to place it. Make many fills it from a CSV
+                    column named {f.label?.trim() ? `“${f.label.trim()}”` : "the same as this field"}.
+                  </p>
+                  {active ? <FieldStyleControls field={f} onChange={updateField} /> : null}
                 </div>
               );
             })}
 
-            <div className="add-field-row">
-              <input
-                placeholder="Optional name, e.g. Course Name"
-                value={customDraftLabel}
-                onChange={(e) => setCustomDraftLabel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomField();
-                  }
-                }}
-                aria-label="New custom field name"
-              />
-              <button type="button" className="btn" onClick={addCustomField}>
-                Add another field
-              </button>
-            </div>
-            <p className="field-help">
-              Use this for extras such as course, grade, attendance, instructor, or
-              achievement. Each field has a name and a value.
-            </p>
+            <button type="button" className="btn add-personal-btn" onClick={addCustomField}>
+              + Add personalized field
+            </button>
           </div>
         </div>
 
@@ -1069,6 +1029,7 @@ export function BuilderPage() {
             </button>
             {!fontsLoaded && <span className="help-inline">Loading fonts…</span>}
           </div>
+          <p className="canvas-drag-hint">Click text to edit it here. Drag it on the certificate to move it.</p>
           <div className="cert-stage">
             <CanvasEditor
               width={width}
