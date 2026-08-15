@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { MiniCert } from "../components/MiniCert";
-import { api, isImageField, isTextField, type CustomData, type Template } from "../lib/api";
+import { ZipProgress } from "../components/ZipProgress";
+import { api, isImageField, isTextField, revokeZip, saveZipFile, type CustomData, type Template, type ZipDownloadResult } from "../lib/api";
 import { loadBatchDraft, saveBatchDraft } from "../lib/batchDraft";
 import { savedDesignName, uniqueSavedTemplates } from "../lib/savedTemplates";
 import { STARTER_TEMPLATES } from "../lib/starterTemplates";
@@ -46,13 +47,10 @@ export function BatchPage() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<{
-    count: number;
-    failed: number;
-    elapsed_ms: number;
-    filename: string;
-  } | null>(null);
+  const [results, setResults] = useState<ZipDownloadResult | null>(null);
+  const [resultNote, setResultNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [zipSaved, setZipSaved] = useState(false);
   const [dateOrder, setDateOrder] = useState<DateOrder>(() => loadDateOrder());
   const [allowMissingFields, setAllowMissingFields] = useState(false);
 
@@ -135,6 +133,10 @@ export function BatchPage() {
     });
   }, [draftReady, selectedId, csvName, headers, rows, mapping, dateOrder, allowMissingFields]);
 
+  useEffect(() => {
+    return () => revokeZip(results);
+  }, [results]);
+
   function persistDraft() {
     saveBatchDraft({
       selectedId,
@@ -187,6 +189,8 @@ export function BatchPage() {
     if (!file) return;
     setError(null);
     setResults(null);
+    setResultNote("");
+    setZipSaved(false);
     setCsvName(file.name);
     setMapping({});
     Papa.parse<Record<string, string>>(file, {
@@ -292,26 +296,41 @@ export function BatchPage() {
 
     setBusy(true);
     setError(null);
-    setStatus("Creating certificates…");
+    setZipSaved(false);
+    setStatus(null);
     try {
       const res = await api.generateBatch({
         template_id: template.id,
         rows: payloadRows,
       });
       setResults(res);
-      const dateNote = invalidDates
-        ? ` ${invalidDates} issue date${invalidDates === 1 ? " was" : "s were"} invalid and left blank.`
-        : "";
-      setStatus(
-        res.failed
-          ? `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"} (${res.failed} row${res.failed === 1 ? "" : "s"} failed).${dateNote}`
-          : `Downloaded ${res.filename} with ${res.count} certificate${res.count === 1 ? "" : "s"}. We do not keep copies on our servers.${dateNote}`,
+      setResultNote(
+        [
+          invalidDates
+            ? `${invalidDates} issue date${invalidDates === 1 ? " was" : "s were"} invalid and left blank.`
+            : "",
+          res.failed
+            ? `${res.failed} row${res.failed === 1 ? "" : "s"} failed.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      setStatus(null);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function downloadReadyZip() {
+    if (!results) return;
+    try {
+      const outcome = await saveZipFile(results);
+      if (outcome === "cancelled") return;
+      setZipSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the zip");
     }
   }
 
@@ -398,6 +417,8 @@ export function BatchPage() {
               onClick={() => {
                 setSelectedId(t.id);
                 setResults(null);
+                setResultNote("");
+                setZipSaved(false);
               }}
             >
               <img src={t.background_url} alt="" />
@@ -613,43 +634,67 @@ export function BatchPage() {
             </div>
           )}
 
-          <p className="muted" style={{ marginTop: "0.75rem" }}>
-            {rows.length > 100
-              ? `We will create the first 100 of ${rows.length} certificates.`
-              : `We will create ${rows.length} certificate${rows.length === 1 ? "" : "s"}.`}
-          </p>
+          {!results && !busy && (
+            <p className="muted" style={{ marginTop: "0.75rem" }}>
+              {rows.length > 100
+                ? `We will create the first 100 of ${rows.length} certificates.`
+                : `We will create ${rows.length} certificate${rows.length === 1 ? "" : "s"}.`}
+            </p>
+          )}
         </div>
       )}
 
-      <div className="issue-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={
-            busy ||
-            !ready ||
-            (unmatchedPersonal.length > 0 && !allowMissingFields)
-          }
-          onClick={() => void runBatch()}
-        >
-          {busy ? "Creating…" : "Create certificates"}
-        </button>
-      </div>
+      {!results && !busy && (
+        <div className="issue-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={
+              busy ||
+              !ready ||
+              (unmatchedPersonal.length > 0 && !allowMissingFields)
+            }
+            onClick={() => void runBatch()}
+          >
+            {busy ? "Creating…" : "Create certificates"}
+          </button>
+        </div>
+      )}
+      <ZipProgress
+        active={busy}
+        label="Creating your certificate zip — please keep this tab open"
+      />
 
-      {status && <div className="status">{status}</div>}
+      {status && !results && !busy && <div className="status">{status}</div>}
       {error && <div className="status error">{error}</div>}
 
-      {results && (
+      {results && !busy && (
         <div className="bulk-step results-block">
-          <h3 className="side-title">Download</h3>
+          <h3 className="side-title">
+            {zipSaved ? "Zip saved" : "Your zip is ready"}
+          </h3>
           <p className="muted">
             {results.filename} · {results.count} certificate
             {results.count === 1 ? "" : "s"}
-            {results.failed ? ` · ${results.failed} failed` : ""} · {results.elapsed_ms}ms
           </p>
-          <p className="muted">
-            Check your downloads folder for the zip. Generated files are not stored on our servers.
-          </p>
+          {resultNote ? <p className="muted">{resultNote}</p> : null}
+          <div className="issue-actions" style={{ marginTop: "0.75rem" }}>
+            <button type="button" className="btn btn-primary" onClick={() => void downloadReadyZip()}>
+              {zipSaved ? "Save zip again" : "Download zip"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={
+                busy ||
+                !ready ||
+                (unmatchedPersonal.length > 0 && !allowMissingFields)
+              }
+              onClick={() => void runBatch()}
+            >
+              Create again
+            </button>
+          </div>
         </div>
       )}
     </section>

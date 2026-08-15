@@ -34,12 +34,15 @@ export function TemplateChooser({
 
   return (
     <div id="chooser" className="chooser">
-      <p className="chooser-eyebrow">Step 1 of 2</p>
-      <h1 className="chooser-title">What certificate would you like to create?</h1>
+      <h1 className="chooser-title">
+        Create professional certificates in seconds —{" "}
+        <em>individually or in bulk</em>.
+      </h1>
       <p className="chooser-sub">
         Pick a design to start from, or bring your own background. You can change
         everything once you&apos;re in the editor.
       </p>
+      <p className="chooser-eyebrow">Step 1 of 2</p>
 
       <div className="template-grid">
         {visible.map((starter) => {

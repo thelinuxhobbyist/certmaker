@@ -3,12 +3,16 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { CanvasEditor, fieldLabel } from "../components/CanvasEditor";
 import { DateOrderToggle } from "../components/DateOrderToggle";
 import { TemplateChooser } from "../components/TemplateChooser";
+import { ZipProgress } from "../components/ZipProgress";
 import {
   api,
   isImageField,
   isTextField,
+  revokeZip,
+  saveZipFile,
   type FieldConfig,
   type Template,
+  type ZipDownloadResult,
 } from "../lib/api";
 import {
   CERT_FONTS,
@@ -301,11 +305,7 @@ export function BuilderPage() {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloadDone, setDownloadDone] = useState(false);
-  const [result, setResult] = useState<{
-    count: number;
-    filename: string;
-    elapsed_ms: number;
-  } | null>(null);
+  const [result, setResult] = useState<ZipDownloadResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bgFileRef = useRef<File | null>(null);
@@ -330,6 +330,10 @@ export function BuilderPage() {
       setView("chooser");
     }
   }, [location]);
+
+  useEffect(() => {
+    return () => revokeZip(result);
+  }, [result]);
 
   const previewUrl = localPreviewUrl || backgroundUrl;
   const hasBackground = Boolean(localPreviewUrl || backgroundKey);
@@ -726,8 +730,9 @@ export function BuilderPage() {
     }
     setGenerating(true);
     setDownloadDone(false);
+    setResult(null);
     setError(null);
-    setStatus("Saving layout and rendering certificate…");
+    setStatus(null);
     try {
       const templateId = await ensureTemplate();
       const custom_data: Record<string, string> = {};
@@ -747,19 +752,23 @@ export function BuilderPage() {
         student_name: studentName,
         custom_data,
       });
-      setResult({
-        count: zip.count,
-        filename: zip.filename,
-        elapsed_ms: zip.elapsed_ms,
-      });
-      setStatus(`Download started: ${zip.filename}. We do not keep a copy on our servers.`);
-      setDownloadDone(true);
-      window.setTimeout(() => setDownloadDone(false), 1600);
+      setResult(zip);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
       setStatus(null);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function downloadReadyZip() {
+    if (!result) return;
+    try {
+      const outcome = await saveZipFile(result);
+      if (outcome === "cancelled") return;
+      setDownloadDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the zip");
     }
   }
 
@@ -791,15 +800,19 @@ export function BuilderPage() {
         ? "Fix the issue date, or leave it blank."
         : uploading
           ? "Uploading…"
-          : downloadDone
-            ? "Your certificate downloaded."
-            : "Your certificate is ready.";
+          : generating
+            ? "Creating your certificate…"
+            : downloadDone && result
+              ? `${result.filename} saved.`
+              : result
+                ? `${result.filename} is ready.`
+                : "Your certificate is ready.";
 
-  const downloadLabel = generating
-    ? "Preparing certificate…"
-    : downloadDone
-      ? "Downloaded ✓"
-      : "Download certificate";
+  const createLabel = generating
+    ? "Creating…"
+    : result
+      ? "Create again"
+      : "Create certificate";
 
   const textByKey = new Map(fields.filter(isTextField).map((f) => [f.key, f]));
   const standardRows = STANDARD_FIELDS.map((spec) => textByKey.get(spec.key)).filter(
@@ -1130,9 +1143,22 @@ export function BuilderPage() {
               disabled={!ready || generating}
               onClick={() => void createOneCertificate()}
             >
-              {downloadLabel}
+              {createLabel}
             </button>
+            {result && !generating ? (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void downloadReadyZip()}
+              >
+                {downloadDone ? "Save zip again" : "Download zip"}
+              </button>
+            ) : null}
           </div>
+          <ZipProgress
+            active={generating}
+            label="Creating your certificate zip — this can take a few seconds"
+          />
           <div className={`bulk-hint${downloadDone || result || returnToBatch ? " is-emphasis" : ""}`}>
             <p>
               {returnToBatch ? (
@@ -1170,12 +1196,6 @@ export function BuilderPage() {
           </div>
           {status && <div className="status">{status}</div>}
           {error && <div className="status error">{error}</div>}
-          {result && (
-            <p className="muted" style={{ margin: "12px 0 0" }}>
-              {result.filename} · {result.count} certificate
-              {result.count === 1 ? "" : "s"}
-            </p>
-          )}
         </div>
       </div>
     </div>

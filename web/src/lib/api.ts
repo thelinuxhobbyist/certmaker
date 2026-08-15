@@ -41,6 +41,8 @@ export type ZipDownloadResult = {
   elapsed_ms: number;
   filename: string;
   policy: string;
+  blob: Blob;
+  objectUrl: string;
 };
 
 export function isTextField(field: FieldConfig): boolean {
@@ -66,7 +68,7 @@ function filenameFromDisposition(header: string | null): string {
   return match?.[1] || "certificates.zip";
 }
 
-async function downloadZip(path: string, body: unknown): Promise<ZipDownloadResult> {
+async function prepareZip(path: string, body: unknown): Promise<ZipDownloadResult> {
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -80,14 +82,6 @@ async function downloadZip(path: string, body: unknown): Promise<ZipDownloadResu
 
   const blob = await res.blob();
   const filename = filenameFromDisposition(res.headers.get("Content-Disposition"));
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(objectUrl);
 
   return {
     count: Number(res.headers.get("X-Certify-Count") || 0),
@@ -95,7 +89,45 @@ async function downloadZip(path: string, body: unknown): Promise<ZipDownloadResu
     elapsed_ms: Number(res.headers.get("X-Certify-Elapsed-Ms") || 0),
     filename,
     policy: res.headers.get("X-Certify-Policy") || "ephemeral",
+    blob,
+    objectUrl: URL.createObjectURL(blob),
   };
+}
+
+export function revokeZip(zip: ZipDownloadResult | null | undefined) {
+  if (zip?.objectUrl) URL.revokeObjectURL(zip.objectUrl);
+}
+
+export async function saveZipFile(zip: ZipDownloadResult): Promise<"saved" | "cancelled"> {
+  const picker = window.showSaveFilePicker;
+  if (typeof picker === "function") {
+    try {
+      const handle = await picker.call(window, {
+        suggestedName: zip.filename,
+        types: [
+          {
+            description: "ZIP archive",
+            accept: { "application/zip": [".zip"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(zip.blob);
+      await writable.close();
+      return "saved";
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
+    }
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = zip.objectUrl;
+  anchor.download = zip.filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  return "saved";
 }
 
 export const api = {
@@ -148,11 +180,11 @@ export const api = {
     template_id: string;
     student_name: string;
     custom_data?: CustomData;
-  }) => downloadZip("/api/certificates/generate-single", body),
+  }) => prepareZip("/api/certificates/generate-single", body),
   generateBatch: (body: {
     template_id: string;
     rows: Array<{ student_name: string; custom_data?: CustomData }>;
-  }) => downloadZip("/api/certificates/batch", body),
+  }) => prepareZip("/api/certificates/batch", body),
   verify: (certId: string) =>
     requestJson<{
       id: string;

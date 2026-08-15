@@ -43,9 +43,7 @@ export function App() {
         </Routes>
       </main>
 
-      <footer className="site-footer">
-        The Cert Maker — design once, make hundreds.
-      </footer>
+      <footer className="site-footer">The Cert Maker</footer>
     </div>
   );
 }
