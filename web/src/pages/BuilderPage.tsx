@@ -876,7 +876,11 @@ export function BuilderPage() {
           <label className="field-name" htmlFor={`val-${f.key}`}>
             {fieldLabel(f.key, f.label || spec?.label)}
           </label>
-          {required ? <span className="field-tag">Required</span> : null}
+          {required ? (
+            <span className="field-tag is-required">Required</span>
+          ) : optional ? (
+            <span className="field-tag">Optional</span>
+          ) : null}
         </div>
         {multiline ? (
           <textarea
