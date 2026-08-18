@@ -318,8 +318,9 @@ export function CanvasEditor({
     if (!el) return;
 
     const update = () => {
-      const available = Math.max(200, el.clientWidth - 8);
-      setFitScale(Math.min(1, available / width));
+      const availableW = Math.max(200, el.clientWidth - 8);
+      const availableH = Math.max(160, el.clientHeight - 8);
+      setFitScale(Math.min(1, availableW / width, availableH / height));
     };
 
     update();

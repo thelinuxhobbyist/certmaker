@@ -706,6 +706,7 @@ h3 {
 
 .editor-view {
   padding-bottom: 40px;
+  overflow-anchor: none;
 }
 
 .editor-head {
@@ -745,6 +746,7 @@ h3 {
 .workspace {
   display: grid;
   grid-template-columns: minmax(320px, 40%) 1fr;
+  grid-template-rows: minmax(0, calc(100vh - 220px)) auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -754,7 +756,7 @@ h3 {
 
 .controls {
   border-right: 1px solid var(--border);
-  max-height: calc(100vh - 220px);
+  min-height: 0;
   overflow-y: auto;
   padding: 24px 26px 40px;
 }
@@ -1013,6 +1015,7 @@ h3 {
   font-size: 12px;
   color: var(--muted);
   text-align: center;
+  flex-shrink: 0;
 }
 
 .add-personal-btn {
@@ -1176,7 +1179,8 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-height: 420px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .zoom-bar {
@@ -1186,6 +1190,7 @@ h3 {
   padding: 16px 0 4px;
   font-size: 13px;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .zoom-bar button {
@@ -1221,10 +1226,12 @@ h3 {
 .cert-stage {
   flex: 1;
   width: 100%;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px 30px 40px;
+  overflow: hidden;
 }
 
 .canvas-pane .canvas-frame {
@@ -1232,6 +1239,11 @@ h3 {
   box-shadow: none;
   padding: 0;
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .canvas-frame {
@@ -1245,11 +1257,12 @@ h3 {
   overflow: auto;
   border-radius: 3px;
   background: transparent;
-  min-height: 160px;
+  min-height: 0;
   width: 100%;
+  flex: 1;
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .canvas-wrap .konvajs-content {
@@ -1671,6 +1684,7 @@ h3 {
 
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
   }
 
   .controls {
@@ -1682,6 +1696,8 @@ h3 {
 
   .canvas-pane {
     order: 1;
+    min-height: 420px;
+    overflow: visible;
   }
 
   .action-bar {

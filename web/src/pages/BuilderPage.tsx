@@ -322,8 +322,18 @@ export function BuilderPage() {
   }
 
   function enterEditor() {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setView("editor");
   }
+
+  useLayoutEffect(() => {
+    if (view !== "editor") return;
+    window.scrollTo(0, 0);
+    const id = window.requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => window.cancelAnimationFrame(id);
+  }, [view]);
 
   useEffect(() => {
     if ((location.state as { home?: boolean } | null)?.home) {
@@ -393,7 +403,18 @@ export function BuilderPage() {
     const field = fields.find((f) => f.key === key);
     const unlabeled = Boolean(field && isCustomTextField(field) && !(field.label || "").trim());
     const el = document.getElementById(unlabeled ? `label-${key}` : `val-${key}`);
-    el?.focus();
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const pane = el.closest(".controls");
+    if (!(pane instanceof HTMLElement)) return;
+    const paneRect = pane.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const padding = 24;
+    if (elRect.top < paneRect.top + padding) {
+      pane.scrollTop -= paneRect.top + padding - elRect.top;
+    } else if (elRect.bottom > paneRect.bottom - padding) {
+      pane.scrollTop += elRect.bottom - (paneRect.bottom - padding);
+    }
   }, [selectedKey, fields]);
 
   function changeDateOrder(order: DateOrder) {
